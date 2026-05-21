@@ -50,6 +50,9 @@ require(script.Parent.VisitorService)
 -- Builds the expedition map and runs the go-out-and-collect gameplay.
 require(script.Parent.ExpeditionService)
 
+-- Monsters that hunt artifact-carriers during expeditions.
+require(script.Parent.MonsterService)
+
 -- First-time onboarding state + completion reward.
 require(script.Parent.TutorialService)
 

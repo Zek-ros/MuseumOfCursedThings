@@ -15,6 +15,7 @@ local DataService   = require(script.Parent.DataService)
 local MuseumService = require(script.Parent.MuseumService)
 local MuseumBuilder = require(script.Parent.MuseumBuilder)
 local MuseumSignals = require(script.Parent.MuseumSignals)
+local ModelFactory  = require(script.Parent.ModelFactory)
 local ArtifactData  = require(ReplicatedStorage.Shared.ArtifactData)
 local Constants     = require(ReplicatedStorage.Shared.Constants)
 local MuseumStats   = require(ReplicatedStorage.Shared.MuseumStats)
@@ -40,39 +41,45 @@ local function spawnArtifactDisplay(museum, pedestal: BasePart, def)
 	local base = pedestal.Position + Vector3.new(0, pedestal.Size.Y / 2 + 3, 0)
 	local color = rarityColor(def.Rarity)
 
-	local part = Instance.new("Part")
-	part.Name = "ArtifactDisplay"
-	part.Anchored = true
-	part.CanCollide = false
-	part.CastShadow = false
-	part.Size = Vector3.new(2.4, 2.4, 2.4)
-	part.Material = Enum.Material.Neon
-	part.Color = color
-	part.CFrame = CFrame.new(base)
+	-- Real model by asset id if the artifact defines one; else a neon cube.
+	local visual = ModelFactory.Resolve(def.ModelId, function()
+		local part = Instance.new("Part")
+		part.Name = "ArtifactDisplay"
+		part.CastShadow = false
+		part.Size = Vector3.new(2.4, 2.4, 2.4)
+		part.Material = Enum.Material.Neon
+		part.Color = color
+		return part
+	end)
 
-	local light = Instance.new("PointLight")
-	light.Color = color
-	light.Brightness = 3
-	light.Range = 12
-	light.Parent = part
+	-- Glow + name label attach to the visual's main part (works for both).
+	local anchor = ModelFactory.AnchorPart(visual)
+	if anchor then
+		local light = Instance.new("PointLight")
+		light.Color = color
+		light.Brightness = 3
+		light.Range = 12
+		light.Parent = anchor
 
-	local billboard = Instance.new("BillboardGui")
-	billboard.Size = UDim2.new(0, 200, 0, 40)
-	billboard.StudsOffset = Vector3.new(0, 2.5, 0)
-	billboard.AlwaysOnTop = true
-	local label = Instance.new("TextLabel")
-	label.Size = UDim2.fromScale(1, 1)
-	label.BackgroundTransparency = 1
-	label.Text = def.Name
-	label.TextColor3 = color
-	label.Font = Enum.Font.GothamBold
-	label.TextScaled = true
-	label.TextStrokeTransparency = 0.3
-	label.Parent = billboard
-	billboard.Parent = part
+		local billboard = Instance.new("BillboardGui")
+		billboard.Size = UDim2.new(0, 200, 0, 40)
+		billboard.StudsOffset = Vector3.new(0, 2.5, 0)
+		billboard.AlwaysOnTop = true
+		local label = Instance.new("TextLabel")
+		label.Size = UDim2.fromScale(1, 1)
+		label.BackgroundTransparency = 1
+		label.Text = def.Name
+		label.TextColor3 = color
+		label.Font = Enum.Font.GothamBold
+		label.TextScaled = true
+		label.TextStrokeTransparency = 0.3
+		label.Parent = billboard
+		billboard.Parent = anchor
+	end
 
-	part.Parent = museum.Model
-	return part, base
+	ModelFactory.Place(visual, CFrame.new(base))
+	visual.Parent = museum.Model
+	return visual, base
 end
 
 -- =============================================
@@ -125,7 +132,7 @@ local function refreshPlayer(player: Player)
 
 	-- Clear current display models
 	for _, d in ipairs(museum.DisplayParts) do
-		d.Part:Destroy()
+		d.Visual:Destroy()
 	end
 	table.clear(museum.DisplayParts)
 	table.clear(museum.Assignments)
@@ -146,8 +153,8 @@ local function refreshPlayer(player: Player)
 		local prompt = pedestal:FindFirstChildOfClass("ProximityPrompt")
 		local entry = displayed[pedIdx]
 		if entry then
-			local part, base = spawnArtifactDisplay(museum, pedestal, entry.Def)
-			table.insert(museum.DisplayParts, { Part = part, Base = base })
+			local visual, base = spawnArtifactDisplay(museum, pedestal, entry.Def)
+			table.insert(museum.DisplayParts, { Visual = visual, Base = base })
 			museum.Assignments[pedIdx] = entry.Index
 			if prompt then
 				prompt.ActionText = "Remove"
@@ -232,7 +239,7 @@ RunService.Heartbeat:Connect(function(dt)
 	local bob = math.sin(spinAngle * 1.5) * 0.4
 	for _, museum in pairs(museums) do
 		for _, d in ipairs(museum.DisplayParts) do
-			d.Part.CFrame = CFrame.new(d.Base + Vector3.new(0, bob, 0)) * CFrame.Angles(0, spinAngle, 0)
+			ModelFactory.Place(d.Visual, CFrame.new(d.Base + Vector3.new(0, bob, 0)) * CFrame.Angles(0, spinAngle, 0))
 		end
 	end
 end)

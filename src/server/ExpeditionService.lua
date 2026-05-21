@@ -12,6 +12,7 @@ local RunService        = game:GetService("RunService")
 
 local ArtifactService   = require(script.Parent.ArtifactService)
 local PedestalService   = require(script.Parent.PedestalService)
+local MonsterService    = require(script.Parent.MonsterService)
 local ExpeditionBuilder = require(script.Parent.ExpeditionBuilder)
 local ArtifactData      = require(ReplicatedStorage.Shared.ArtifactData)
 local Constants         = require(ReplicatedStorage.Shared.Constants)
@@ -111,6 +112,8 @@ local function spawnPickup(mapId: string, index: number)
 		carrying[triggerPlayer] = { ArtifactId = artifactId, Rarity = rarity }
 		ExpeditionService.AttachCarry(triggerPlayer, artifactId, rarity)
 		fireState(triggerPlayer, "Carrying", def.Name)
+		-- The artifact attracts monsters while it's being carried.
+		MonsterService.StartHunt(triggerPlayer)
 
 		task.delay(PICKUP_RESPAWN, function()
 			if not map.Pickups[index] then
@@ -198,8 +201,18 @@ function ExpeditionService.Leave(player: Player)
 		carrying[player] = nil
 		removeCarry(player)
 	end
+	MonsterService.StopHunt(player)
 	returnToMuseum(player)
 	fireState(player, "Left")
+end
+
+-- A monster caught the player: they drop the artifact but stay on the map.
+function ExpeditionService.DropCarry(player: Player)
+	if not carrying[player] then return end
+	carrying[player] = nil
+	removeCarry(player)
+	MonsterService.StopHunt(player)
+	fireState(player, "Dropped")
 end
 
 local function doExtract(player: Player)
@@ -207,12 +220,18 @@ local function doExtract(player: Player)
 	if not carry then return end
 	carrying[player] = nil
 	removeCarry(player)
+	MonsterService.StopHunt(player)
 
 	ArtifactService.GrantArtifact(player, carry.ArtifactId)
 	local def = ArtifactData.Artifacts[carry.ArtifactId]
 	returnToMuseum(player)
 	fireState(player, "Extracted", def and def.Name or "artifact")
 end
+
+-- When a monster catches a carrier, drop their artifact.
+MonsterService.Caught.Event:Connect(function(player)
+	ExpeditionService.DropCarry(player)
+end)
 
 -- =============================================
 --  PICKUP SPIN (all maps)

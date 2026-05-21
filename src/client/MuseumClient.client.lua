@@ -756,6 +756,9 @@ ExpeditionStateEvent.OnClientEvent:Connect(function(info)
 		if data then updateTopBar(data) end
 		if inventoryPanel.Visible then refreshInventory() end
 		if collectionPanel.Visible then refreshCollection() end
+	elseif state == "Dropped" then
+		showBanner("A monster caught you! You dropped the artifact — grab it and run!",
+			Color3.fromRGB(60, 20, 20), Color3.fromRGB(255, 160, 160), 3)
 	elseif state == "Left" then
 		expeditionButton.Visible = true
 		leaveButton.Visible = false

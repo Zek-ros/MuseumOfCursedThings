@@ -1,24 +1,25 @@
 -- VisitorService.lua (ModuleScript)
--- Spawns wandering NPC visitors inside each player's museum. The number of
--- visitors is a pure function of the displayed collection's "appeal"
--- (MuseumStats.CalculateVisitorCount), so the crowd you see always matches the
--- visitor income you're earning. Rarer artifacts = bigger crowds.
---
--- Visitors wander between random points and panic (scatter) when a
--- ScareVisitors chaos event fires.
+-- Spawns wandering NPC visitors inside each player's museum. Visitor count is a
+-- pure function of the displayed collection's appeal (MuseumStats), so the crowd
+-- always matches the visitor income. Visitors are body+head placeholder figures
+-- (ModelFactory) that can be swapped for real character models by asset id.
 
 local Players       = game:GetService("Players")
-local TweenService  = game:GetService("TweenService")
 
-local DataService   = require(script.Parent.DataService)
+local DataService     = require(script.Parent.DataService)
 local PedestalService = require(script.Parent.PedestalService)
-local MuseumBuilder = require(script.Parent.MuseumBuilder)
-local MuseumSignals = require(script.Parent.MuseumSignals)
-local MuseumStats   = require(game:GetService("ReplicatedStorage").Shared.MuseumStats)
+local MuseumBuilder   = require(script.Parent.MuseumBuilder)
+local MuseumSignals   = require(script.Parent.MuseumSignals)
+local ModelFactory    = require(script.Parent.ModelFactory)
+local MuseumStats     = require(game:GetService("ReplicatedStorage").Shared.MuseumStats)
 
 local VisitorService = {}
 
--- [player] = { Visitors = { { Part = Part, State = "wander"|"panic" } ... } }
+-- Set this to a Roblox model asset id to use a real visitor model instead of
+-- the placeholder figure. nil = procedural placeholder.
+local VISITOR_MODEL_ID = nil
+
+-- [player] = { Visitors = { { Model = Model, State = "wander"|"panic", FleeTarget = CFrame? } } }
 local crowds = {}
 
 local SHIRT_COLORS = {
@@ -35,69 +36,63 @@ local function randomFloorCFrame(museum): CFrame
 	local hz = (MuseumBuilder.ROOM_Z / 2) - 6
 	local x = (math.random() * 2 - 1) * hx
 	local z = (math.random() * 2 - 1) * hz
-	return museum.Origin * CFrame.new(x, 2, z)
+	return museum.Origin * CFrame.new(x, 1.6, z)
 end
 
 local function makeVisitor(museum)
-	local part = Instance.new("Part")
-	part.Name = "Visitor"
-	part.Anchored = true
-	part.CanCollide = false
-	part.Size = Vector3.new(2, 4, 1)
-	part.Color = SHIRT_COLORS[math.random(#SHIRT_COLORS)]
-	part.Material = Enum.Material.SmoothPlastic
-	part.CFrame = randomFloorCFrame(museum)
-
-	local billboard = Instance.new("BillboardGui")
-	billboard.Size = UDim2.new(0, 40, 0, 24)
-	billboard.StudsOffset = Vector3.new(0, 2.6, 0)
-	billboard.AlwaysOnTop = true
-	local face = Instance.new("TextLabel")
-	face.Size = UDim2.fromScale(1, 1)
-	face.BackgroundTransparency = 1
-	face.Text = ":)"
-	face.TextColor3 = Color3.fromRGB(40, 40, 40)
-	face.Font = Enum.Font.GothamBold
-	face.TextScaled = true
-	face.Parent = billboard
-	billboard.Parent = part
-
-	part.Parent = museum.Model
-	return part
+	local visitor = ModelFactory.Resolve(VISITOR_MODEL_ID, function()
+		return ModelFactory.BuildFigure({
+			Name = "Visitor",
+			BodyColor = SHIRT_COLORS[math.random(#SHIRT_COLORS)],
+			HeadColor = Color3.fromRGB(225, 205, 180),
+			FaceText = ":)",
+		})
+	end)
+	ModelFactory.Place(visitor, randomFloorCFrame(museum))
+	visitor.Parent = museum.Model
+	return visitor
 end
 
--- Per-visitor wander loop. Reads entry.State so panic can interrupt it.
+-- Per-visitor movement loop. Reads entry.State so panic can interrupt wandering.
 local function runWander(entry, player: Player)
 	task.spawn(function()
-		while entry.Part.Parent do
-			if entry.State == "panic" then
-				task.wait(0.3)
+		while entry.Model and entry.Model.Parent do
+			local museum = PedestalService.GetMuseum(player)
+			if not museum then break end
+
+			local start = entry.Model:GetPivot()
+			local target, speed
+			local startedPanicked = entry.State == "panic"
+			if startedPanicked then
+				target = entry.FleeTarget or randomFloorCFrame(museum)
+				speed = 26
 			else
-				local museum = PedestalService.GetMuseum(player)
-				if not museum then break end
-
-				local target = randomFloorCFrame(museum)
-				local fromPos = entry.Part.Position
-				local dir = target.Position - fromPos
-				if dir.Magnitude < 0.1 then
-					dir = Vector3.new(0, 0, -1)
-				end
-				local goalCFrame = CFrame.lookAt(target.Position, target.Position + dir)
-
-				local seconds = math.clamp(dir.Magnitude / 8, 0.5, 4)
-				local tween = TweenService:Create(entry.Part, TweenInfo.new(seconds, Enum.EasingStyle.Linear), {
-					CFrame = goalCFrame,
-				})
-				tween:Play()
-				tween.Completed:Wait()
-				task.wait(math.random(10, 30) / 10) -- pause 1-3s
+				target = randomFloorCFrame(museum)
+				speed = 8
 			end
+
+			local dir = target.Position - start.Position
+			if dir.Magnitude < 0.1 then dir = start.LookVector end
+			local goal = CFrame.lookAt(target.Position, target.Position + dir)
+			local dur = math.clamp(dir.Magnitude / speed, 0.25, 4)
+
+			local t = 0
+			while t < dur do
+				if not (entry.Model and entry.Model.Parent) then return end
+				local dt = task.wait()
+				t += dt
+				entry.Model:PivotTo(start:Lerp(goal, math.min(t / dur, 1)))
+				-- React quickly if panic kicks in mid-stroll
+				if entry.State == "panic" and not startedPanicked then break end
+			end
+
+			task.wait(if entry.State == "panic" then 0.2 else math.random(10, 30) / 10)
 		end
 	end)
 end
 
 -- =============================================
---  SYNC: match the crowd size to the museum's appeal
+--  SYNC: match crowd size to museum appeal
 -- =============================================
 function VisitorService.Sync(player: Player)
 	local museum = PedestalService.GetMuseum(player)
@@ -115,15 +110,15 @@ function VisitorService.Sync(player: Player)
 	local current = #crowd.Visitors
 	if current < target then
 		for _ = current + 1, target do
-			local entry = { Part = makeVisitor(museum), State = "wander" }
+			local entry = { Model = makeVisitor(museum), State = "wander" }
 			table.insert(crowd.Visitors, entry)
 			runWander(entry, player)
 		end
 	elseif current > target then
 		for _ = current, target + 1, -1 do
 			local entry = table.remove(crowd.Visitors)
-			if entry and entry.Part then
-				entry.Part:Destroy()
+			if entry and entry.Model then
+				entry.Model:Destroy()
 			end
 		end
 	end
@@ -139,13 +134,8 @@ function VisitorService.Panic(player: Player)
 
 	for _, entry in ipairs(crowd.Visitors) do
 		entry.State = "panic"
-		if entry.Part.Parent then
-			local fleeCF = museum.Origin * CFrame.new(
-				(math.random() * 2 - 1) * 30, 2, (MuseumBuilder.ROOM_Z / 2) - 3)
-			TweenService:Create(entry.Part, TweenInfo.new(0.8, Enum.EasingStyle.Quad), {
-				CFrame = fleeCF,
-			}):Play()
-		end
+		entry.FleeTarget = museum.Origin * CFrame.new(
+			(math.random() * 2 - 1) * 30, 1.6, (MuseumBuilder.ROOM_Z / 2) - 3)
 	end
 
 	task.delay(4, function()
@@ -161,8 +151,8 @@ local function cleanup(player: Player)
 	local crowd = crowds[player]
 	if crowd then
 		for _, entry in ipairs(crowd.Visitors) do
-			if entry.Part then
-				entry.Part:Destroy()
+			if entry.Model then
+				entry.Model:Destroy()
 			end
 		end
 	end
@@ -172,7 +162,6 @@ end
 -- =============================================
 --  LIFECYCLE
 -- =============================================
--- Re-sync the crowd whenever the displayed collection changes.
 MuseumSignals.MuseumChanged.Event:Connect(VisitorService.Sync)
 Players.PlayerRemoving:Connect(cleanup)
 

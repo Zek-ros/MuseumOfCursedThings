@@ -46,6 +46,12 @@
 			},
 			"TutorialService": {
 				"$path": "src/server/TutorialService.lua"
+			},
+			"ModelFactory": {
+				"$path": "src/server/ModelFactory.lua"
+			},
+			"MonsterService": {
+				"$path": "src/server/MonsterService.lua"
 			}
 		},
 
