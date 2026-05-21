@@ -2,15 +2,26 @@
 -- Procedurally builds a stylized museum room with display pedestals.
 -- Geometry is generated in code so it lives in the Rojo-synced project
 -- (no hand-placed parts to keep in sync). Swap these for real models later.
+--
+-- Pedestals are laid out in rows and created one at a time (MakePedestal) so
+-- PedestalService can ADD pedestals when the player levels their museum up.
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Constants = require(ReplicatedStorage.Shared.Constants)
 
 local MuseumBuilder = {}
 
--- Room dimensions (studs)
-local ROOM_X = 64        -- width
-local ROOM_Z = 44        -- depth
+-- Room dimensions (studs) — sized to fit MAX_PEDESTALS in rows.
+local ROOM_X = 84
+local ROOM_Z = 56
 local WALL_HEIGHT = 18
 local WALL_THICK = 1
-local PEDESTAL_COUNT = 6
+
+-- Pedestal layout
+local PEDESTALS_PER_ROW = 6
+local PED_SPACING_X = 12
+local PED_ROW_SPACING = 12
+local PED_FIRST_ROW_Z = -(ROOM_Z / 2) + 10
 
 local FLOOR_COLOR   = Color3.fromRGB(48, 44, 58)
 local WALL_COLOR    = Color3.fromRGB(36, 33, 46)
@@ -30,6 +41,27 @@ local function makePart(origin: CFrame, parent: Instance, name: string, size: Ve
 	part.BottomSurface = Enum.SurfaceType.Smooth
 	part.Parent = parent
 	return part
+end
+
+-- Local position (relative to origin) of the Nth pedestal slot.
+local function pedestalLocalPos(index: number): Vector3
+	local i0 = index - 1
+	local row = math.floor(i0 / PEDESTALS_PER_ROW)
+	local col = i0 % PEDESTALS_PER_ROW
+	local startX = -((PEDESTALS_PER_ROW - 1) * PED_SPACING_X) / 2
+	local x = startX + col * PED_SPACING_X
+	local z = PED_FIRST_ROW_Z + row * PED_ROW_SPACING
+	return Vector3.new(x, 2, z)
+end
+
+--- Create a single pedestal at slot `index`, parented to `parent`. Returns the part.
+function MuseumBuilder.MakePedestal(origin: CFrame, index: number, parent: Instance)
+	local pedestal = makePart(origin, parent, "Pedestal",
+		Vector3.new(3, 4, 3),
+		pedestalLocalPos(index),
+		PEDESTAL_COLOR, Enum.Material.Marble)
+	pedestal:SetAttribute("PedestalIndex", index)
+	return pedestal
 end
 
 --- Build a museum at the given origin CFrame (origin = center of floor top).
@@ -60,30 +92,23 @@ function MuseumBuilder.Build(origin: CFrame, ownerName: string)
 		Vector3.new(WALL_THICK, WALL_HEIGHT, ROOM_Z),
 		Vector3.new(halfX, wallY, 0), WALL_COLOR, Enum.Material.Concrete)
 
-	-- Ceiling lights: a few warm point lights mounted near the top
-	for i = -1, 1 do
+	-- Ceiling lights: warm point lights spread across the (bigger) room
+	for _, lx in ipairs({ -28, 0, 28 }) do
 		local fixture = makePart(origin, model, "LightFixture",
 			Vector3.new(4, 0.5, 4),
-			Vector3.new(i * 18, WALL_HEIGHT - 1, 0),
+			Vector3.new(lx, WALL_HEIGHT - 1, 0),
 			Color3.fromRGB(20, 20, 20), Enum.Material.Metal)
 		local light = Instance.new("PointLight")
 		light.Color = LIGHT_COLOR
 		light.Brightness = 2
-		light.Range = 28
+		light.Range = 30
 		light.Parent = fixture
 	end
 
-	-- Pedestals along the back wall
+	-- Initial pedestals (level 1 count); more are added on level-up.
 	local pedestals = {}
-	local spacing = 10
-	local startX = -((PEDESTAL_COUNT - 1) * spacing) / 2
-	for i = 1, PEDESTAL_COUNT do
-		local pedestal = makePart(origin, model, "Pedestal",
-			Vector3.new(3, 4, 3),
-			Vector3.new(startX + (i - 1) * spacing, 2, -halfZ + 6),
-			PEDESTAL_COLOR, Enum.Material.Marble)
-		pedestal:SetAttribute("PedestalIndex", i)
-		table.insert(pedestals, pedestal)
+	for i = 1, Constants.PEDESTALS_BASE do
+		table.insert(pedestals, MuseumBuilder.MakePedestal(origin, i, model))
 	end
 
 	-- Spawn location near the front, facing the pedestals

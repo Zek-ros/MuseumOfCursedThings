@@ -41,9 +41,9 @@ function MuseumService.DisplayArtifact(player: Player, artifactIndex: number)
 		if a.IsDisplayed then displayed += 1 end
 	end
 
-	local maxSlots = Constants.MAX_DISPLAYED_ARTIFACTS + ((data.MuseumLevel - 1) * 5)
+	local maxSlots = MuseumStats.DisplaySlots(data)
 	if displayed >= maxSlots then
-		return false, "No display slots available"
+		return false, "No display slots — expand your museum!"
 	end
 
 	artifact.IsDisplayed = true
@@ -86,6 +86,29 @@ function MuseumService.UpgradeContainment(player: Player, artifactIndex: number,
 	-- Containment changes effective danger + income, so resync.
 	notifyChange(player)
 	return true, "Upgraded"
+end
+
+-- =============================================
+--  MUSEUM EXPANSION (level up = more pedestals + income)
+-- =============================================
+
+function MuseumService.UpgradeMuseum(player: Player)
+	local data = DataService.GetData(player)
+	if not data then return false, "No data" end
+
+	local cost = MuseumStats.MuseumUpgradeCost(data.MuseumLevel)
+	if not cost then
+		return false, "Museum already at maximum level"
+	end
+	if data.Currency < cost then
+		return false, "Not enough coins to expand"
+	end
+
+	DataService.UpdateCurrency(player, -cost)
+	data.MuseumLevel += 1
+	-- New level adds pedestals (PedestalService grows them on refresh) + income.
+	notifyChange(player)
+	return true, "Museum expanded to level " .. data.MuseumLevel
 end
 
 -- =============================================
@@ -154,9 +177,54 @@ local function handleGetInventory(player: Player)
 		Inventory = inventory,
 		Currency = data.Currency,
 		MuseumLevel = data.MuseumLevel,
+		MaxMuseumLevel = Constants.MAX_MUSEUM_LEVEL,
+		NextUpgradeCost = MuseumStats.MuseumUpgradeCost(data.MuseumLevel),
+		DisplaySlots = MuseumStats.DisplaySlots(data),
 		DangerScore = dangerScore,
 		DangerTier = MuseumStats.GetDangerTier(dangerScore),
 		IncomePerTick = MuseumStats.CalculateIncome(data),
+		VisitorCount = MuseumStats.CalculateVisitorCount(data),
+	}
+end
+
+-- =============================================
+--  COLLECTION INDEX
+-- =============================================
+
+local function handleGetCollection(player: Player)
+	local data = DataService.GetData(player)
+	if not data then return nil end
+
+	local discovered = data.Discovered or {}
+	local entries = {}
+	local discoveredCount = 0
+
+	for id, def in pairs(ArtifactData.Artifacts) do
+		local isDiscovered = discovered[id] == true
+		if isDiscovered then
+			discoveredCount += 1
+		end
+		table.insert(entries, {
+			ArtifactId = id,
+			Name = def.Name,
+			Rarity = def.Rarity,
+			Description = def.Description,
+			Discovered = isDiscovered,
+		})
+	end
+
+	-- Sort: discovered first, then by name, for a stable readable list
+	table.sort(entries, function(a, b)
+		if a.Discovered ~= b.Discovered then
+			return a.Discovered
+		end
+		return a.Name < b.Name
+	end)
+
+	return {
+		Entries = entries,
+		Discovered = discoveredCount,
+		Total = #entries,
 	}
 end
 
@@ -167,7 +235,9 @@ end
 RemoteFunctions:WaitForChild("DisplayArtifact").OnServerInvoke      = MuseumService.DisplayArtifact
 RemoteFunctions:WaitForChild("UndisplayArtifact").OnServerInvoke    = MuseumService.UndisplayArtifact
 RemoteFunctions:WaitForChild("UpgradeContainment").OnServerInvoke   = MuseumService.UpgradeContainment
+RemoteFunctions:WaitForChild("UpgradeMuseum").OnServerInvoke        = MuseumService.UpgradeMuseum
 RemoteFunctions:WaitForChild("GetMuseumSummary").OnServerInvoke     = handleGetMuseumSummary
 RemoteFunctions:WaitForChild("GetInventory").OnServerInvoke         = handleGetInventory
+RemoteFunctions:WaitForChild("GetCollection").OnServerInvoke        = handleGetCollection
 
 return MuseumService

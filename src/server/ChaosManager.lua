@@ -9,6 +9,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local DataService    = require(script.Parent.DataService)
 local PedestalService = require(script.Parent.PedestalService)
+local VisitorService = require(script.Parent.VisitorService)
 local ChaosEffects   = require(script.Parent.ChaosEffects)
 local ArtifactData   = require(ReplicatedStorage.Shared.ArtifactData)
 local Constants      = require(ReplicatedStorage.Shared.Constants)
@@ -138,6 +139,11 @@ task.spawn(function()
 					local museum = PedestalService.GetMuseum(player)
 					if museum then
 						ChaosEffects.Play(chosen, player, museum)
+					end
+
+					-- Real visitors panic and scatter when scared
+					if chosen == "ScareVisitors" then
+						VisitorService.Panic(player)
 					end
 
 					data.Statistics.ChaosEventsSurvived += 1

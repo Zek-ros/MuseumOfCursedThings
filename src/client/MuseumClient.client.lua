@@ -12,18 +12,25 @@ local player    = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
 local RemoteEvents     = ReplicatedStorage:WaitForChild("RemoteEvents")
-local IncomeEvent       = RemoteEvents:WaitForChild("IncomeReceived")
-local ChaosEventRemote  = RemoteEvents:WaitForChild("ChaosEvent")
-local OpenInventoryEvent = RemoteEvents:WaitForChild("OpenInventory")
-local MuseumChangedEvent = RemoteEvents:WaitForChild("MuseumChanged")
+local IncomeEvent        = RemoteEvents:WaitForChild("IncomeReceived")
+local ChaosEventRemote   = RemoteEvents:WaitForChild("ChaosEvent")
+local OpenInventoryEvent  = RemoteEvents:WaitForChild("OpenInventory")
+local MuseumChangedEvent  = RemoteEvents:WaitForChild("MuseumChanged")
+local LeaveExpeditionEvent = RemoteEvents:WaitForChild("LeaveExpedition")
+local ExpeditionStateEvent = RemoteEvents:WaitForChild("ExpeditionState")
 
 local RemoteFunctions  = ReplicatedStorage:WaitForChild("RemoteFunctions")
 local GetInventoryRF   = RemoteFunctions:WaitForChild("GetInventory")
 local DisplayRF        = RemoteFunctions:WaitForChild("DisplayArtifact")
 local UndisplayRF      = RemoteFunctions:WaitForChild("UndisplayArtifact")
-local ExpeditionRF     = RemoteFunctions:WaitForChild("CompleteExpedition")
+local UpgradeContainmentRF = RemoteFunctions:WaitForChild("UpgradeContainment")
+local StartExpeditionRF = RemoteFunctions:WaitForChild("StartExpedition")
+local UpgradeMuseumRF   = RemoteFunctions:WaitForChild("UpgradeMuseum")
+local GetCollectionRF   = RemoteFunctions:WaitForChild("GetCollection")
 
-local Constants = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Constants"))
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Constants = require(Shared:WaitForChild("Constants"))
+local ArtifactData = require(Shared:WaitForChild("ArtifactData"))
 
 -- =============================================
 --  COLORS / THEME
@@ -48,6 +55,24 @@ local DANGER_COLORS = {
 local function rarityColor(rarity: string): Color3
 	local info = Constants.RARITY[rarity]
 	return (info and info.Color) or THEME.Text
+end
+
+-- The next (stronger) containment after the given type, or nil if maxed.
+local function nextContainment(current: string): string?
+	local order = Constants.CONTAINMENT_ORDER
+	for i, name in ipairs(order) do
+		if name == current then
+			return order[i + 1]
+		end
+	end
+	-- Unknown current type: offer the first upgrade above Glass
+	return order[2]
+end
+
+-- Cost to switch to a containment type.
+local function containmentCost(containmentType: string): number
+	local info = ArtifactData.ContainmentTypes[containmentType]
+	return (info and info.Cost) or 0
 end
 
 -- Turn a numeric danger level into a word + color so players can read risk
@@ -115,7 +140,7 @@ currencyLabel.TextColor3 = THEME.Gold
 currencyLabel.Font = Enum.Font.GothamBold
 currencyLabel.TextSize = 22
 currencyLabel.TextXAlignment = Enum.TextXAlignment.Left
-currencyLabel.Text = "🪙 ..."
+currencyLabel.Text = "● ..."
 currencyLabel.Parent = topBar
 
 local incomeLabel = Instance.new("TextLabel")
@@ -163,6 +188,16 @@ end
 local expeditionButton = makeActionButton("ExpeditionButton", "🔦 Go on Expedition", THEME.Accent, 1)
 local inventoryButton  = makeActionButton("InventoryButton", "🏛 Inventory", THEME.PanelLight, 0)
 inventoryButton.TextColor3 = THEME.Text
+
+local museumButton  = makeActionButton("MuseumButton", "🏛 Expand Museum", THEME.PanelLight, 2)
+museumButton.TextColor3 = THEME.Text
+local collectionButton = makeActionButton("CollectionButton", "📖 Collection", THEME.PanelLight, 3)
+collectionButton.TextColor3 = THEME.Text
+
+-- Shown only while on an expedition
+local leaveButton = makeActionButton("LeaveExpeditionButton", "🏃 Leave Expedition", THEME.Bad, 4)
+leaveButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+leaveButton.Visible = false
 
 -- =============================================
 --  INVENTORY PANEL
@@ -228,6 +263,56 @@ listLayout.SortOrder = Enum.SortOrder.LayoutOrder
 listLayout.Parent = scroll
 
 -- =============================================
+--  COLLECTION PANEL
+-- =============================================
+local collectionPanel = Instance.new("Frame")
+collectionPanel.Name = "CollectionPanel"
+collectionPanel.Size = UDim2.new(0, 460, 0, 460)
+collectionPanel.Position = UDim2.new(0.5, -230, 0.5, -230)
+collectionPanel.BackgroundColor3 = THEME.Panel
+collectionPanel.BackgroundTransparency = 0.05
+collectionPanel.Visible = false
+collectionPanel.Parent = screenGui
+corner(collectionPanel, 12)
+
+local collTitle = Instance.new("TextLabel")
+collTitle.Size = UDim2.new(1, -60, 0, 44)
+collTitle.Position = UDim2.new(0, 16, 0, 8)
+collTitle.BackgroundTransparency = 1
+collTitle.TextColor3 = THEME.Text
+collTitle.Font = Enum.Font.GothamBold
+collTitle.TextSize = 22
+collTitle.TextXAlignment = Enum.TextXAlignment.Left
+collTitle.Text = "Collection"
+collTitle.Parent = collectionPanel
+
+local collClose = Instance.new("TextButton")
+collClose.Size = UDim2.new(0, 36, 0, 36)
+collClose.Position = UDim2.new(1, -44, 0, 10)
+collClose.BackgroundColor3 = THEME.Bad
+collClose.TextColor3 = Color3.fromRGB(255, 255, 255)
+collClose.Font = Enum.Font.GothamBold
+collClose.TextSize = 20
+collClose.Text = "✕"
+collClose.Parent = collectionPanel
+corner(collClose, 8)
+
+local collScroll = Instance.new("ScrollingFrame")
+collScroll.Size = UDim2.new(1, -24, 1, -64)
+collScroll.Position = UDim2.new(0, 12, 0, 56)
+collScroll.BackgroundTransparency = 1
+collScroll.BorderSizePixel = 0
+collScroll.ScrollBarThickness = 6
+collScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+collScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+collScroll.Parent = collectionPanel
+
+local collLayout = Instance.new("UIListLayout")
+collLayout.Padding = UDim.new(0, 6)
+collLayout.SortOrder = Enum.SortOrder.LayoutOrder
+collLayout.Parent = collScroll
+
+-- =============================================
 --  FLOATING TEXT + BANNER HELPERS
 -- =============================================
 local function showFloatingText(text: string, color: Color3, yStart: number?)
@@ -282,15 +367,28 @@ local cachedCurrency = 0
 local function updateTopBar(info)
 	if info.Currency then
 		cachedCurrency = info.Currency
-		currencyLabel.Text = "🪙 " .. cachedCurrency
+		currencyLabel.Text = "● " .. cachedCurrency
 	end
 	if info.IncomePerTick then
-		incomeLabel.Text = "+" .. info.IncomePerTick .. " / tick"
+		local visitors = info.VisitorCount or 0
+		if visitors > 0 then
+			incomeLabel.Text = string.format("+%d / tick  ·  %d visitors", info.IncomePerTick, visitors)
+		else
+			incomeLabel.Text = "+" .. info.IncomePerTick .. " / tick"
+		end
 	end
 	if info.DangerScore ~= nil then
 		local tier = info.DangerTier or "Low"
-		dangerLabel.Text = string.format("Danger: %d (%s)", info.DangerScore, tier)
+		local mult = Constants.DANGER_INCOME_MULTIPLIER[tier] or 1.0
+		dangerLabel.Text = string.format("Danger: %d (%s)  ·  income x%.2g", info.DangerScore, tier, mult)
 		dangerLabel.TextColor3 = DANGER_COLORS[tier] or DANGER_COLORS.Low
+	end
+	if info.MuseumLevel then
+		if info.NextUpgradeCost then
+			museumButton.Text = string.format("🏛 Expand: Lv.%d (%d)", info.MuseumLevel, info.NextUpgradeCost)
+		else
+			museumButton.Text = string.format("🏛 Museum Lv.%d (MAX)", info.MuseumLevel)
+		end
 	end
 end
 
@@ -339,11 +437,12 @@ local function buildArtifactRow(entry, refreshFn)
 	)
 	detailLabel.Parent = row
 
+	-- Display / Remove (top-right)
 	local toggle = Instance.new("TextButton")
-	toggle.Size = UDim2.new(0, 92, 0, 36)
-	toggle.Position = UDim2.new(1, -92, 0.5, -18)
+	toggle.Size = UDim2.new(0, 96, 0, 28)
+	toggle.Position = UDim2.new(1, -100, 0, 5)
 	toggle.Font = Enum.Font.GothamBold
-	toggle.TextSize = 14
+	toggle.TextSize = 13
 	toggle.AutoButtonColor = true
 	corner(toggle, 6)
 
@@ -367,6 +466,38 @@ local function buildArtifactRow(entry, refreshFn)
 		end
 		refreshFn()
 	end)
+
+	-- Upgrade containment (bottom-right) — the coin sink that tames chaos
+	local upgrade = Instance.new("TextButton")
+	upgrade.Size = UDim2.new(0, 96, 0, 28)
+	upgrade.Position = UDim2.new(1, -100, 0, 37)
+	upgrade.Font = Enum.Font.GothamBold
+	upgrade.TextScaled = true
+	corner(upgrade, 6)
+
+	local nextType = nextContainment(entry.ContainmentType)
+	if nextType then
+		local cost = containmentCost(nextType)
+		upgrade.Text = string.format("🔒⬆ %d", cost)
+		upgrade.BackgroundColor3 = THEME.Accent
+		upgrade.TextColor3 = Color3.fromRGB(255, 255, 255)
+		upgrade.Activated:Connect(function()
+			upgrade.Active = false
+			local ok, msg = UpgradeContainmentRF:InvokeServer(entry.Index, nextType)
+			if ok then
+				showBanner("Containment upgraded to " .. nextType, Color3.fromRGB(30, 30, 50), THEME.Good, 2)
+			elseif msg then
+				showBanner(msg, THEME.Bad, Color3.fromRGB(255, 255, 255), 2)
+			end
+			refreshFn()
+		end)
+	else
+		upgrade.Text = "🔒 Max"
+		upgrade.BackgroundColor3 = Color3.fromRGB(50, 48, 60)
+		upgrade.TextColor3 = Color3.fromRGB(160, 160, 170)
+		upgrade.AutoButtonColor = false
+	end
+	upgrade.Parent = row
 
 	row.Parent = scroll
 end
@@ -397,6 +528,66 @@ refreshInventory = function()
 end
 
 -- =============================================
+--  COLLECTION RENDERING
+-- =============================================
+local function buildCollectionRow(entry, order: number)
+	local row = Instance.new("Frame")
+	row.Size = UDim2.new(1, -6, 0, 44)
+	row.BackgroundColor3 = THEME.PanelLight
+	row.LayoutOrder = order
+	corner(row, 8)
+	padding(row, 8)
+
+	local nameLabel = Instance.new("TextLabel")
+	nameLabel.Size = UDim2.new(1, 0, 0, 18)
+	nameLabel.BackgroundTransparency = 1
+	nameLabel.Font = Enum.Font.GothamBold
+	nameLabel.TextSize = 15
+	nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+	nameLabel.Parent = row
+
+	local subLabel = Instance.new("TextLabel")
+	subLabel.Size = UDim2.new(1, 0, 0, 14)
+	subLabel.Position = UDim2.new(0, 0, 0, 18)
+	subLabel.BackgroundTransparency = 1
+	subLabel.Font = Enum.Font.Gotham
+	subLabel.TextSize = 12
+	subLabel.TextXAlignment = Enum.TextXAlignment.Left
+	subLabel.Parent = row
+
+	if entry.Discovered then
+		nameLabel.Text = entry.Name
+		nameLabel.TextColor3 = rarityColor(entry.Rarity)
+		subLabel.Text = entry.Rarity .. " · " .. entry.Description
+		subLabel.TextColor3 = Color3.fromRGB(170, 170, 180)
+	else
+		nameLabel.Text = "??? "
+		nameLabel.TextColor3 = Color3.fromRGB(110, 110, 120)
+		subLabel.Text = entry.Rarity .. " · undiscovered"
+		subLabel.TextColor3 = Color3.fromRGB(90, 90, 100)
+	end
+
+	row.Parent = collScroll
+end
+
+local function refreshCollection()
+	local info = GetCollectionRF:InvokeServer()
+	if not info then return end
+
+	for _, child in ipairs(collScroll:GetChildren()) do
+		if child:IsA("Frame") then
+			child:Destroy()
+		end
+	end
+
+	for i, entry in ipairs(info.Entries) do
+		buildCollectionRow(entry, i)
+	end
+
+	collTitle.Text = string.format("Collection  (%d / %d)", info.Discovered, info.Total)
+end
+
+-- =============================================
 --  BUTTON BEHAVIOUR
 -- =============================================
 inventoryButton.Activated:Connect(function()
@@ -410,32 +601,79 @@ closeButton.Activated:Connect(function()
 	inventoryPanel.Visible = false
 end)
 
+museumButton.Activated:Connect(function()
+	local ok, msg = UpgradeMuseumRF:InvokeServer()
+	if ok then
+		showBanner(msg or "Museum expanded!", Color3.fromRGB(20, 40, 50), THEME.Good, 2.5)
+	elseif msg then
+		showBanner(msg, THEME.Bad, Color3.fromRGB(255, 255, 255), 2)
+	end
+	-- Top bar (and the button label) refresh via MuseumChanged.
+end)
+
+collectionButton.Activated:Connect(function()
+	collectionPanel.Visible = not collectionPanel.Visible
+	if collectionPanel.Visible then
+		refreshCollection()
+	end
+end)
+
+collClose.Activated:Connect(function()
+	collectionPanel.Visible = false
+end)
+
 local expeditionBusy = false
 expeditionButton.Activated:Connect(function()
 	if expeditionBusy then return end
 	expeditionBusy = true
-	expeditionButton.Text = "🔦 Searching..."
+	expeditionButton.Text = "🔦 Traveling..."
 	expeditionButton.AutoButtonColor = false
 
-	local result = ExpeditionRF:InvokeServer()
-	if result then
-		showBanner(
-			string.format("You recovered: %s  (%s)", result.Name, result.Rarity),
-			rarityColor(result.Rarity):Lerp(THEME.Panel, 0.55),
-			rarityColor(result.Rarity),
-			3.5
-		)
-	else
-		showBanner("The expedition turned up nothing...", THEME.PanelLight, THEME.Text, 2.5)
+	-- Close the inventory panel and send the player to the expedition map.
+	inventoryPanel.Visible = false
+	local ok, msg = StartExpeditionRF:InvokeServer()
+	if not ok and msg then
+		showBanner(msg, THEME.PanelLight, THEME.Text, 2)
 	end
 
-	-- Reflect new currency / inventory immediately
-	refreshInventory()
-
-	task.wait(1) -- small cooldown so it can't be spammed
+	task.wait(1)
 	expeditionButton.Text = "🔦 Go on Expedition"
 	expeditionButton.AutoButtonColor = true
 	expeditionBusy = false
+end)
+
+leaveButton.Activated:Connect(function()
+	LeaveExpeditionEvent:FireServer()
+end)
+
+-- Server tells us about expedition progress (entered / carrying / extracted / left)
+ExpeditionStateEvent.OnClientEvent:Connect(function(info)
+	local state = info.State
+	if state == "Entered" then
+		expeditionButton.Visible = false
+		leaveButton.Visible = true
+		showBanner("Find a cursed artifact and carry it to the green EXTRACTION pad!",
+			Color3.fromRGB(20, 40, 30), Color3.fromRGB(160, 255, 200), 4)
+	elseif state == "Carrying" then
+		showBanner(string.format("Picked up %s — get to the EXTRACTION pad!", info.ArtifactName or "an artifact"),
+			Color3.fromRGB(30, 30, 50), Color3.fromRGB(220, 220, 255), 3)
+	elseif state == "AlreadyCarrying" then
+		showBanner("You can only carry one artifact at a time!", THEME.PanelLight, THEME.Text, 2)
+	elseif state == "Extracted" then
+		expeditionButton.Visible = true
+		leaveButton.Visible = false
+		showBanner(string.format("Extracted %s! Added to your collection.", info.ArtifactName or "an artifact"),
+			Color3.fromRGB(20, 50, 30), THEME.Good, 3.5)
+		-- Reflect the new artifact + extraction reward
+		local data = GetInventoryRF:InvokeServer()
+		if data then updateTopBar(data) end
+		if inventoryPanel.Visible then refreshInventory() end
+		if collectionPanel.Visible then refreshCollection() end
+	elseif state == "Left" then
+		expeditionButton.Visible = true
+		leaveButton.Visible = false
+		showBanner("Returned to your museum empty-handed.", THEME.PanelLight, THEME.Text, 2)
+	end
 end)
 
 -- =============================================
@@ -443,7 +681,7 @@ end)
 -- =============================================
 IncomeEvent.OnClientEvent:Connect(function(amount: number)
 	cachedCurrency += amount
-	currencyLabel.Text = "🪙 " .. cachedCurrency
+	currencyLabel.Text = "● " .. cachedCurrency
 	showFloatingText("+" .. amount .. " coins", THEME.Good)
 end)
 
@@ -474,7 +712,7 @@ end
 chaosHandlers.StealIncome = function(data)
 	showFloatingText("King's Coin stole " .. (data.Amount or "?") .. " coins!", THEME.Bad, 0.65)
 	cachedCurrency = math.max(0, cachedCurrency - (data.Amount or 0))
-	currencyLabel.Text = "🪙 " .. cachedCurrency
+	currencyLabel.Text = "● " .. cachedCurrency
 end
 
 chaosHandlers.GlitchReality = function(data)

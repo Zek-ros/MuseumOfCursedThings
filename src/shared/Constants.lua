@@ -43,4 +43,47 @@ Constants.STARTING_CURRENCY = 100
 -- Extra income percentage when visitors are present
 Constants.MUSEUM_VISIT_INCOME_BONUS = 0.10
 
+-- The "risk premium": total museum danger multiplies passive income.
+-- Displaying dangerous artifacts earns more — but also triggers more chaos.
+Constants.DANGER_INCOME_MULTIPLIER = {
+	Low      = 1.0,
+	Medium   = 1.25,
+	High     = 1.6,
+	Critical = 2.1,
+}
+
+-- Ordered containment upgrade path for the shop (cheapest/weakest -> strongest).
+Constants.CONTAINMENT_ORDER = {
+	"GlassCase",
+	"ReinforcedCase",
+	"ElectricCage",
+	"AntiTeleportField",
+	"FreezingChamber",
+	"HolySeal",
+	"ReinforcedVault",
+}
+
+-- Museum visitors: rarer displayed artifacts draw bigger crowds, and each
+-- visitor adds a little passive income. Visitor count is a pure function of
+-- the displayed collection (no saved state), so income + spawning stay in sync.
+Constants.VISITOR_APPEAL_WEIGHT = {
+	Common    = 1,
+	Uncommon  = 2,
+	Rare      = 4,
+	Legendary = 8,
+	Forbidden = 15,
+}
+Constants.VISITOR_APPEAL_PER = 3   -- appeal points needed per visitor
+Constants.MAX_VISITORS = 10        -- crowd cap per museum
+Constants.VISITOR_INCOME_EACH = 2  -- income per tick per visitor
+
+-- Museum growth: leveling up adds pedestals (= display slots) and income.
+-- Display slots are tied to physical pedestals so what you can show always
+-- matches what appears in the room.
+Constants.PEDESTALS_BASE = 6        -- pedestals at museum level 1
+Constants.PEDESTALS_PER_LEVEL = 3   -- extra pedestals per level
+Constants.MAX_MUSEUM_LEVEL = 5      -- level cap
+Constants.MAX_PEDESTALS = 18        -- = BASE + (MAX_LEVEL-1)*PER_LEVEL
+Constants.MUSEUM_UPGRADE_BASE_COST = 1000 -- cost = BASE * currentLevel
+
 return Constants

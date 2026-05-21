@@ -37,6 +37,7 @@ local DEFAULT_DATA = {
 	-- Each entry: { ArtifactId = string, ContainmentType = string, IsDisplayed = bool }
 	Artifacts = {},
 	MuseumLevel = 1,
+	Discovered = {}, -- [artifactId] = true; powers the collection index
 	ResearchedArtifacts = {},
 	Statistics = {
 		ArtifactsCollected = 0,
@@ -143,6 +144,9 @@ function DataService.AddArtifact(player: Player, artifactId: string, containment
 		IsDisplayed = false,
 	})
 	data.Statistics.ArtifactsCollected += 1
+	-- Record first-time discovery for the collection index
+	data.Discovered = data.Discovered or {}
+	data.Discovered[artifactId] = true
 end
 
 function DataService.CleanupPlayer(player: Player)

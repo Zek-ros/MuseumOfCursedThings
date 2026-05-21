@@ -32,8 +32,17 @@
 			"PedestalService": {
 				"$path": "src/server/PedestalService.lua"
 			},
+			"VisitorService": {
+				"$path": "src/server/VisitorService.lua"
+			},
 			"ChaosEffects": {
 				"$path": "src/server/ChaosEffects.lua"
+			},
+			"ExpeditionBuilder": {
+				"$path": "src/server/ExpeditionBuilder.lua"
+			},
+			"ExpeditionService": {
+				"$path": "src/server/ExpeditionService.lua"
 			}
 		},
 
@@ -64,6 +73,12 @@
 				},
 				"MuseumChanged": {
 					"$className": "RemoteEvent"
+				},
+				"LeaveExpedition": {
+					"$className": "RemoteEvent"
+				},
+				"ExpeditionState": {
+					"$className": "RemoteEvent"
 				}
 			},
 			"RemoteFunctions": {
@@ -87,6 +102,15 @@
 					"$className": "RemoteFunction"
 				},
 				"CompleteExpedition": {
+					"$className": "RemoteFunction"
+				},
+				"StartExpedition": {
+					"$className": "RemoteFunction"
+				},
+				"UpgradeMuseum": {
+					"$className": "RemoteFunction"
+				},
+				"GetCollection": {
 					"$className": "RemoteFunction"
 				}
 			}

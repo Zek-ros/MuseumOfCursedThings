@@ -33,7 +33,56 @@ function MuseumStats.CalculateIncome(data): number
 	local levelMultiplier = 1 + ((data.MuseumLevel - 1) * 0.1)
 	total *= levelMultiplier
 
+	-- Risk premium: more total danger = more income (but more chaos too).
+	total *= MuseumStats.DangerMultiplier(data)
+
+	-- Visitors add a flat bonus on top of artifact income.
+	total += MuseumStats.CalculateVisitorIncome(data)
+
 	return math.floor(total)
+end
+
+--- The income multiplier earned from a museum's current danger tier.
+function MuseumStats.DangerMultiplier(data): number
+	local tier = MuseumStats.GetDangerTier(MuseumStats.CalculateDanger(data))
+	return Constants.DANGER_INCOME_MULTIPLIER[tier] or 1.0
+end
+
+--- How many visitors the displayed collection currently attracts.
+-- A pure function of the data so VisitorService and income stay in sync.
+function MuseumStats.CalculateVisitorCount(data): number
+	if not data then return 0 end
+	local appeal = 0
+	for _, artifact in ipairs(data.Artifacts) do
+		if artifact.IsDisplayed then
+			local def = ArtifactData.Artifacts[artifact.ArtifactId]
+			if def then
+				appeal += Constants.VISITOR_APPEAL_WEIGHT[def.Rarity] or 0
+			end
+		end
+	end
+	local count = math.floor(appeal / Constants.VISITOR_APPEAL_PER)
+	return math.clamp(count, 0, Constants.MAX_VISITORS)
+end
+
+--- Passive income contributed by the current crowd of visitors.
+function MuseumStats.CalculateVisitorIncome(data): number
+	return MuseumStats.CalculateVisitorCount(data) * Constants.VISITOR_INCOME_EACH
+end
+
+--- How many artifacts a museum can display (= physical pedestals) at its level.
+function MuseumStats.DisplaySlots(data): number
+	local level = (data and data.MuseumLevel) or 1
+	local slots = Constants.PEDESTALS_BASE + (level - 1) * Constants.PEDESTALS_PER_LEVEL
+	return math.clamp(slots, Constants.PEDESTALS_BASE, Constants.MAX_PEDESTALS)
+end
+
+--- Cost to upgrade from `level` to the next level, or nil if already maxed.
+function MuseumStats.MuseumUpgradeCost(level: number): number?
+	if level >= Constants.MAX_MUSEUM_LEVEL then
+		return nil
+	end
+	return Constants.MUSEUM_UPGRADE_BASE_COST * level
 end
 
 --- Total danger score from a player's displayed artifacts.

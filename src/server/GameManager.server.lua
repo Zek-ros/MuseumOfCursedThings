@@ -44,6 +44,12 @@ require(script.Parent.MuseumService)
 -- Builds each player's physical museum and syncs displayed artifacts to it.
 require(script.Parent.PedestalService)
 
+-- Spawns wandering NPC visitors scaled to each museum's appeal.
+require(script.Parent.VisitorService)
+
+-- Builds the expedition map and runs the go-out-and-collect gameplay.
+require(script.Parent.ExpeditionService)
+
 -- Background loops (income ticks, chaos events). These depend on DataService.
 require(script.Parent.PassiveIncomeService)
 require(script.Parent.ChaosManager)

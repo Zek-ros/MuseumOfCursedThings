@@ -17,6 +17,7 @@ local MuseumBuilder = require(script.Parent.MuseumBuilder)
 local MuseumSignals = require(script.Parent.MuseumSignals)
 local ArtifactData  = require(ReplicatedStorage.Shared.ArtifactData)
 local Constants     = require(ReplicatedStorage.Shared.Constants)
+local MuseumStats   = require(ReplicatedStorage.Shared.MuseumStats)
 
 local OpenInventoryEvent = ReplicatedStorage:WaitForChild("RemoteEvents"):WaitForChild("OpenInventory")
 
@@ -77,11 +78,50 @@ end
 -- =============================================
 --  REFRESH: sync pedestals to a player's displayed artifacts
 -- =============================================
+-- Attach the interaction prompt to a pedestal (empty -> open inventory,
+-- occupied -> remove the displayed artifact).
+local function attachPrompt(player: Player, pedestal: BasePart)
+	local prompt = Instance.new("ProximityPrompt")
+	prompt.ActionText = "Open Inventory"
+	prompt.ObjectText = "Empty Pedestal"
+	prompt.HoldDuration = 0
+	prompt.MaxActivationDistance = 10
+	prompt.RequiresLineOfSight = false
+	prompt.Parent = pedestal
+
+	prompt.Triggered:Connect(function(triggerPlayer)
+		if triggerPlayer ~= player then return end
+		local museum = museums[player]
+		if not museum then return end
+		local pedIdx = pedestal:GetAttribute("PedestalIndex")
+		local artifactIndex = museum.Assignments[pedIdx]
+		if artifactIndex then
+			MuseumService.UndisplayArtifact(player, artifactIndex)
+		else
+			OpenInventoryEvent:FireClient(player)
+		end
+	end)
+end
+
+-- Grow the museum's physical pedestals to match its current level.
+local function ensurePedestals(player: Player, data, museum)
+	local target = MuseumStats.DisplaySlots(data)
+	while #museum.Pedestals < target do
+		local index = #museum.Pedestals + 1
+		local pedestal = MuseumBuilder.MakePedestal(museum.Origin, index, museum.Model)
+		attachPrompt(player, pedestal)
+		table.insert(museum.Pedestals, pedestal)
+	end
+end
+
 local function refreshPlayer(player: Player)
 	local museum = museums[player]
 	if not museum then return end
 	local data = DataService.GetData(player)
 	if not data then return end
+
+	-- Add pedestals if the museum has leveled up since last refresh
+	ensurePedestals(player, data, museum)
 
 	-- Clear current display models
 	for _, d in ipairs(museum.DisplayParts) do
@@ -163,30 +203,9 @@ local function setupMuseum(player: Player)
 		ChaosMannequin = nil, -- lazily created by ChaosEffects
 	}
 
-	-- Add an interaction prompt to each pedestal
+	-- Add an interaction prompt to each starting pedestal
 	for _, pedestal in ipairs(built.Pedestals) do
-		local prompt = Instance.new("ProximityPrompt")
-		prompt.ActionText = "Open Inventory"
-		prompt.ObjectText = "Empty Pedestal"
-		prompt.HoldDuration = 0
-		prompt.MaxActivationDistance = 10
-		prompt.RequiresLineOfSight = false
-		prompt.Parent = pedestal
-
-		prompt.Triggered:Connect(function(triggerPlayer)
-			if triggerPlayer ~= player then return end
-			local museum = museums[player]
-			if not museum then return end
-			local pedIdx = pedestal:GetAttribute("PedestalIndex")
-			local artifactIndex = museum.Assignments[pedIdx]
-			if artifactIndex then
-				-- Occupied: take the artifact off display
-				MuseumService.UndisplayArtifact(player, artifactIndex)
-			else
-				-- Empty: prompt the player to pick something to display
-				OpenInventoryEvent:FireClient(player)
-			end
-		end)
+		attachPrompt(player, pedestal)
 	end
 
 	-- Respawn here from now on, and move them in right away
