@@ -38,6 +38,7 @@ local DEFAULT_DATA = {
 	Artifacts = {},
 	MuseumLevel = 1,
 	Discovered = {}, -- [artifactId] = true; powers the collection index
+	TutorialDone = false,
 	ResearchedArtifacts = {},
 	Statistics = {
 		ArtifactsCollected = 0,

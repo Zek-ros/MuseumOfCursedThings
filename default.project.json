@@ -43,6 +43,9 @@
 			},
 			"ExpeditionService": {
 				"$path": "src/server/ExpeditionService.lua"
+			},
+			"TutorialService": {
+				"$path": "src/server/TutorialService.lua"
 			}
 		},
 
@@ -112,6 +115,12 @@
 				},
 				"GetCollection": {
 					"$className": "RemoteFunction"
+				},
+				"GetTutorialState": {
+					"$className": "RemoteFunction"
+				},
+				"CompleteTutorial": {
+					"$className": "RemoteFunction"
 				}
 			}
 		},
@@ -122,6 +131,9 @@
 				"$className": "StarterPlayerScripts",
 				"MuseumClient": {
 					"$path": "src/client/MuseumClient.client.lua"
+				},
+				"Onboarding": {
+					"$path": "src/client/Onboarding.client.lua"
 				}
 			}
 		}

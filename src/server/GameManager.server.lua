@@ -50,6 +50,9 @@ require(script.Parent.VisitorService)
 -- Builds the expedition map and runs the go-out-and-collect gameplay.
 require(script.Parent.ExpeditionService)
 
+-- First-time onboarding state + completion reward.
+require(script.Parent.TutorialService)
+
 -- Background loops (income ticks, chaos events). These depend on DataService.
 require(script.Parent.PassiveIncomeService)
 require(script.Parent.ChaosManager)
