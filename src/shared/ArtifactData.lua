@@ -139,6 +139,170 @@ ArtifactData.Artifacts = {
 		ContainmentRequired = "ReinforcedVault",
 		ChaosEffects = { "SpawnClones", "AlterServer", "GlitchReality" },
 	},
+
+	-- ===== COMMON (added) =====
+
+	SingingDoorknob = {
+		Name = "Singing Doorknob",
+		Rarity = "Common",
+		DangerLevel = 1,
+		Value = 38,
+		PassiveIncome = 2,
+		Description = "Hums off-key show tunes. Knows your name and the chorus.",
+		ContainmentRequired = "GlassCase",
+		ChaosEffects = { "WhisperNames" },
+	},
+
+	StickyNoteOfDoom = {
+		Name = "Sticky Note of Doom",
+		Rarity = "Common",
+		DangerLevel = 1,
+		Value = 32,
+		PassiveIncome = 1,
+		Description = "Always reads 'behind you :)'. It is never wrong.",
+		ContainmentRequired = "GlassCase",
+		ChaosEffects = { "FlickerLights" },
+	},
+
+	MelancholyHouseplant = {
+		Name = "Melancholy Houseplant",
+		Rarity = "Common",
+		DangerLevel = 1,
+		Value = 42,
+		PassiveIncome = 2,
+		Description = "Wilts dramatically when criticized. Cannot be over-watered, only out-grieved.",
+		ContainmentRequired = "GlassCase",
+		ChaosEffects = { "CryingSounds" },
+	},
+
+	-- ===== UNCOMMON (added) =====
+
+	ScreamingAlarmClock = {
+		Name = "Screaming Alarm Clock",
+		Rarity = "Uncommon",
+		DangerLevel = 2,
+		Value = 75,
+		PassiveIncome = 3,
+		Description = "Goes off at 3:00 AM sharp. There is no off button. There never was.",
+		ContainmentRequired = "GlassCase",
+		ChaosEffects = { "RingDuringChaos", "ScareVisitors" },
+	},
+
+	PossessedRoomba = {
+		Name = "Possessed Roomba",
+		Rarity = "Uncommon",
+		DangerLevel = 3,
+		Value = 95,
+		PassiveIncome = 4,
+		Description = "Patrols the museum at night. Judges your cleanliness. Plots.",
+		ContainmentRequired = "ElectricCage",
+		ChaosEffects = { "MoveWhenUnwatched", "Teleport" },
+	},
+
+	HauntedUmbrella = {
+		Name = "Haunted Umbrella",
+		Rarity = "Uncommon",
+		DangerLevel = 2,
+		Value = 70,
+		PassiveIncome = 3,
+		Description = "Opens itself indoors. The bad luck is, frankly, relentless.",
+		ContainmentRequired = "GlassCase",
+		ChaosEffects = { "FlickerLights", "ScareVisitors" },
+	},
+
+	-- ===== RARE (added) =====
+
+	PossessedTelevision = {
+		Name = "Possessed Television",
+		Rarity = "Rare",
+		DangerLevel = 4,
+		Value = 210,
+		PassiveIncome = 7,
+		Description = "Broadcasts channels that don't exist. One of them is showing your museum. Right now.",
+		ContainmentRequired = "ElectricCage",
+		ChaosEffects = { "GlitchReality", "FlickerLights" },
+	},
+
+	CursedMusicBox = {
+		Name = "Cursed Music Box",
+		Rarity = "Rare",
+		DangerLevel = 3,
+		Value = 175,
+		PassiveIncome = 6,
+		Description = "Plays a lullaby when no one's winding it. The ballerina is facing the wrong way again.",
+		ContainmentRequired = "GlassCase",
+		ChaosEffects = { "CryingSounds", "WhisperNames" },
+	},
+
+	BitingStapler = {
+		Name = "The Biting Stapler",
+		Rarity = "Rare",
+		DangerLevel = 4,
+		Value = 195,
+		PassiveIncome = 7,
+		Description = "Snaps at fingers and flings staples at passersby. HR has a thick file on it.",
+		ContainmentRequired = "ReinforcedCase",
+		ChaosEffects = { "LaunchProjectile", "ScareVisitors" },
+	},
+
+	-- ===== LEGENDARY (added) =====
+
+	GravityOrb = {
+		Name = "Gravity Orb",
+		Rarity = "Legendary",
+		DangerLevel = 5,
+		Value = 520,
+		PassiveIncome = 16,
+		Description = "Forgets which way is down. So does everything near it.",
+		ContainmentRequired = "FreezingChamber",
+		ChaosEffects = { "GlitchReality", "SpawnClones" },
+	},
+
+	WhisperingWallpaper = {
+		Name = "Whispering Wallpaper",
+		Rarity = "Legendary",
+		DangerLevel = 6,
+		Value = 560,
+		PassiveIncome = 17,
+		Description = "Its pattern rearranges into faces when you look away. They are mouthing your name.",
+		ContainmentRequired = "HolySeal",
+		ChaosEffects = { "WhisperNames", "GlitchReality" },
+	},
+
+	EternalCandle = {
+		Name = "Eternal Candle",
+		Rarity = "Legendary",
+		DangerLevel = 5,
+		Value = 540,
+		PassiveIncome = 16,
+		Description = "Never melts, never goes out, and gets noticeably hotter before bad things happen.",
+		ContainmentRequired = "FreezingChamber",
+		ChaosEffects = { "PredictDisaster", "FlickerLights" },
+	},
+
+	-- ===== FORBIDDEN (added) =====
+
+	HungryDoor = {
+		Name = "The Hungry Door",
+		Rarity = "Forbidden",
+		DangerLevel = 8,
+		Value = 1100,
+		PassiveIncome = 32,
+		Description = "Opens onto a different room every time. None of them are in this building.",
+		ContainmentRequired = "ReinforcedVault",
+		ChaosEffects = { "Teleport", "GlitchReality", "AlterServer" },
+	},
+
+	ClockworkHeart = {
+		Name = "Clockwork Heart",
+		Rarity = "Forbidden",
+		DangerLevel = 7,
+		Value = 950,
+		PassiveIncome = 28,
+		Description = "Ticks louder the more danger surrounds it. Right now it is very, very loud.",
+		ContainmentRequired = "ReinforcedVault",
+		ChaosEffects = { "PredictDisaster", "OverrideContainment", "AlterServer" },
+	},
 }
 
 -- =============================================

@@ -1,7 +1,10 @@
 -- ExpeditionService.lua (ModuleScript)
--- Real expedition gameplay: send the player to the expedition map, let them
--- physically pick up an artifact, carry it to the extraction pad, and return
--- to their museum with it. Artifacts are only granted on successful extraction.
+-- Real expedition gameplay: send the player to a chosen expedition map, let
+-- them physically pick up an artifact, carry it to the extraction pad, and
+-- return to their museum with it. Artifacts are only granted on extraction.
+--
+-- Supports multiple themed maps (see ExpeditionMaps). Each map is built once at
+-- its own location with its own pickups + extraction zone.
 
 local Players           = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -12,6 +15,7 @@ local PedestalService   = require(script.Parent.PedestalService)
 local ExpeditionBuilder = require(script.Parent.ExpeditionBuilder)
 local ArtifactData      = require(ReplicatedStorage.Shared.ArtifactData)
 local Constants         = require(ReplicatedStorage.Shared.Constants)
+local ExpeditionMaps    = require(ReplicatedStorage.Shared.ExpeditionMaps)
 
 local RemoteFunctions = ReplicatedStorage:WaitForChild("RemoteFunctions")
 local RemoteEvents    = ReplicatedStorage:WaitForChild("RemoteEvents")
@@ -19,16 +23,15 @@ local ExpeditionStateEvent = RemoteEvents:WaitForChild("ExpeditionState")
 
 local ExpeditionService = {}
 
-local EXPEDITION_ORIGIN = CFrame.new(-1000, 0, 0)
+local EXPEDITION_BASE = Vector3.new(-1000, 0, 0)
+local MAP_SPACING = 220
 local PICKUP_RESPAWN = 8
 
 -- State
-local mapInfo
-local pickups = {}          -- [spawnIndex] = Part
-local pickupBaseCF = {}     -- [spawnIndex] = CFrame (for spin)
+local maps = {}             -- [mapId] = { Info, Pickups = {idx=Part}, BaseCF = {idx=CFrame} }
 local carrying = {}         -- [player] = { ArtifactId, Rarity }
 local carriedPart = {}      -- [player] = Part
-local inExpedition = {}     -- [player] = true
+local inExpedition = {}     -- [player] = mapId
 local extractDebounce = {}  -- [player] = true
 
 local function rarityColor(rarity: string): Color3
@@ -61,7 +64,10 @@ local function makeNameLabel(parent: Instance, text: string, color: Color3, offs
 	return billboard
 end
 
-local function spawnPickup(index: number)
+local function spawnPickup(mapId: string, index: number)
+	local map = maps[mapId]
+	if not map then return end
+
 	local artifactId, rarity = ArtifactService.RollArtifact()
 	if not artifactId then return end
 	local def = ArtifactData.Artifacts[artifactId]
@@ -74,7 +80,7 @@ local function spawnPickup(index: number)
 	part.Size = Vector3.new(2.2, 2.2, 2.2)
 	part.Material = Enum.Material.Neon
 	part.Color = rarityColor(rarity)
-	part.CFrame = pickupBaseCF[index]
+	part.CFrame = map.BaseCF[index]
 
 	local light = Instance.new("PointLight")
 	light.Color = part.Color
@@ -100,21 +106,21 @@ local function spawnPickup(index: number)
 		end
 		if not part.Parent then return end -- already taken
 		part:Destroy()
-		pickups[index] = nil
+		map.Pickups[index] = nil
 
 		carrying[triggerPlayer] = { ArtifactId = artifactId, Rarity = rarity }
 		ExpeditionService.AttachCarry(triggerPlayer, artifactId, rarity)
 		fireState(triggerPlayer, "Carrying", def.Name)
 
 		task.delay(PICKUP_RESPAWN, function()
-			if not pickups[index] then
-				spawnPickup(index)
+			if not map.Pickups[index] then
+				spawnPickup(mapId, index)
 			end
 		end)
 	end)
 
-	part.Parent = mapInfo.Model
-	pickups[index] = part
+	part.Parent = map.Info.Model
+	map.Pickups[index] = part
 end
 
 -- =============================================
@@ -175,10 +181,13 @@ local function returnToMuseum(player: Player)
 	end
 end
 
-function ExpeditionService.Start(player: Player)
+function ExpeditionService.Start(player: Player, mapId: string)
 	if inExpedition[player] then return false, "Already on an expedition" end
-	inExpedition[player] = true
-	teleportTo(player, mapInfo.SpawnCFrame)
+	local map = maps[mapId]
+	if not map then return false, "Unknown expedition" end
+
+	inExpedition[player] = mapId
+	teleportTo(player, map.Info.SpawnCFrame)
 	fireState(player, "Entered")
 	return true, "Expedition started"
 end
@@ -206,14 +215,16 @@ local function doExtract(player: Player)
 end
 
 -- =============================================
---  PICKUP SPIN
+--  PICKUP SPIN (all maps)
 -- =============================================
 local spinAngle = 0
 RunService.Heartbeat:Connect(function(dt)
 	spinAngle += dt * 1.2
-	for index, part in pairs(pickups) do
-		if part.Parent and pickupBaseCF[index] then
-			part.CFrame = pickupBaseCF[index] * CFrame.Angles(0, spinAngle, 0)
+	for _, map in pairs(maps) do
+		for index, part in pairs(map.Pickups) do
+			if part.Parent and map.BaseCF[index] then
+				part.CFrame = map.BaseCF[index] * CFrame.Angles(0, spinAngle, 0)
+			end
 		end
 	end
 end)
@@ -221,18 +232,21 @@ end)
 -- =============================================
 --  INIT
 -- =============================================
-local function init()
-	mapInfo = ExpeditionBuilder.Build(EXPEDITION_ORIGIN)
-	mapInfo.Model.Parent = workspace
+local function buildMap(def, mapIndex: number)
+	local origin = CFrame.new(EXPEDITION_BASE + Vector3.new(0, 0, (mapIndex - 1) * MAP_SPACING))
+	local info = ExpeditionBuilder.Build(origin, def)
+	info.Model.Parent = workspace
 
-	-- Record base CFrames and spawn the initial pickups
-	for index, cf in ipairs(mapInfo.SpawnPoints) do
-		pickupBaseCF[index] = cf
-		spawnPickup(index)
+	local map = { Info = info, Pickups = {}, BaseCF = {} }
+	maps[def.Id] = map
+
+	for index, cf in ipairs(info.SpawnPoints) do
+		map.BaseCF[index] = cf
+		spawnPickup(def.Id, index)
 	end
 
-	-- Extraction detection
-	mapInfo.ExtractionZone.Touched:Connect(function(hit)
+	-- Extraction detection (any map's pad extracts whoever is carrying)
+	info.ExtractionZone.Touched:Connect(function(hit)
 		local player = Players:GetPlayerFromCharacter(hit.Parent)
 		if not player then return end
 		if not inExpedition[player] or not carrying[player] then return end
@@ -245,11 +259,17 @@ local function init()
 	end)
 end
 
+local function init()
+	for i, def in ipairs(ExpeditionMaps) do
+		buildMap(def, i)
+	end
+end
+
 -- =============================================
 --  REMOTES + LIFECYCLE
 -- =============================================
-RemoteFunctions:WaitForChild("StartExpedition").OnServerInvoke = function(player)
-	return ExpeditionService.Start(player)
+RemoteFunctions:WaitForChild("StartExpedition").OnServerInvoke = function(player, mapId)
+	return ExpeditionService.Start(player, mapId)
 end
 
 RemoteEvents:WaitForChild("LeaveExpedition").OnServerEvent:Connect(function(player)

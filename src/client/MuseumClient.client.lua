@@ -31,6 +31,7 @@ local GetCollectionRF   = RemoteFunctions:WaitForChild("GetCollection")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Constants = require(Shared:WaitForChild("Constants"))
 local ArtifactData = require(Shared:WaitForChild("ArtifactData"))
+local ExpeditionMaps = require(Shared:WaitForChild("ExpeditionMaps"))
 
 -- =============================================
 --  COLORS / THEME
@@ -311,6 +312,52 @@ local collLayout = Instance.new("UIListLayout")
 collLayout.Padding = UDim.new(0, 6)
 collLayout.SortOrder = Enum.SortOrder.LayoutOrder
 collLayout.Parent = collScroll
+
+-- =============================================
+--  EXPEDITION CHOOSER PANEL
+-- =============================================
+local expeditionPanel = Instance.new("Frame")
+expeditionPanel.Name = "ExpeditionPanel"
+expeditionPanel.Size = UDim2.new(0, 440, 0, 320)
+expeditionPanel.Position = UDim2.new(0.5, -220, 0.5, -160)
+expeditionPanel.BackgroundColor3 = THEME.Panel
+expeditionPanel.BackgroundTransparency = 0.05
+expeditionPanel.Visible = false
+expeditionPanel.Parent = screenGui
+corner(expeditionPanel, 12)
+
+local expTitle = Instance.new("TextLabel")
+expTitle.Size = UDim2.new(1, -60, 0, 44)
+expTitle.Position = UDim2.new(0, 16, 0, 8)
+expTitle.BackgroundTransparency = 1
+expTitle.TextColor3 = THEME.Text
+expTitle.Font = Enum.Font.GothamBold
+expTitle.TextSize = 22
+expTitle.TextXAlignment = Enum.TextXAlignment.Left
+expTitle.Text = "Choose an Expedition"
+expTitle.Parent = expeditionPanel
+
+local expClose = Instance.new("TextButton")
+expClose.Size = UDim2.new(0, 36, 0, 36)
+expClose.Position = UDim2.new(1, -44, 0, 10)
+expClose.BackgroundColor3 = THEME.Bad
+expClose.TextColor3 = Color3.fromRGB(255, 255, 255)
+expClose.Font = Enum.Font.GothamBold
+expClose.TextSize = 20
+expClose.Text = "✕"
+expClose.Parent = expeditionPanel
+corner(expClose, 8)
+
+local expList = Instance.new("Frame")
+expList.Size = UDim2.new(1, -24, 1, -64)
+expList.Position = UDim2.new(0, 12, 0, 56)
+expList.BackgroundTransparency = 1
+expList.Parent = expeditionPanel
+
+local expListLayout = Instance.new("UIListLayout")
+expListLayout.Padding = UDim.new(0, 10)
+expListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+expListLayout.Parent = expList
 
 -- =============================================
 --  FLOATING TEXT + BANNER HELPERS
@@ -622,24 +669,64 @@ collClose.Activated:Connect(function()
 	collectionPanel.Visible = false
 end)
 
+-- Build one button per expedition map (static list)
 local expeditionBusy = false
+for i, map in ipairs(ExpeditionMaps) do
+	local btn = Instance.new("TextButton")
+	btn.Size = UDim2.new(1, 0, 0, 64)
+	btn.LayoutOrder = i
+	btn.BackgroundColor3 = THEME.PanelLight
+	btn.AutoButtonColor = true
+	btn.Text = ""
+	corner(btn, 8)
+
+	local nameLabel = Instance.new("TextLabel")
+	nameLabel.Size = UDim2.new(1, -24, 0, 24)
+	nameLabel.Position = UDim2.new(0, 12, 0, 8)
+	nameLabel.BackgroundTransparency = 1
+	nameLabel.Font = Enum.Font.GothamBold
+	nameLabel.TextSize = 18
+	nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+	nameLabel.TextColor3 = THEME.Accent
+	nameLabel.Text = "🔦 " .. map.Name
+	nameLabel.Parent = btn
+
+	local descLabel = Instance.new("TextLabel")
+	descLabel.Size = UDim2.new(1, -24, 0, 24)
+	descLabel.Position = UDim2.new(0, 12, 0, 32)
+	descLabel.BackgroundTransparency = 1
+	descLabel.Font = Enum.Font.Gotham
+	descLabel.TextSize = 13
+	descLabel.TextWrapped = true
+	descLabel.TextXAlignment = Enum.TextXAlignment.Left
+	descLabel.TextColor3 = Color3.fromRGB(180, 180, 190)
+	descLabel.Text = map.Description
+	descLabel.Parent = btn
+
+	btn.Activated:Connect(function()
+		if expeditionBusy then return end
+		expeditionBusy = true
+		expeditionPanel.Visible = false
+		local ok, msg = StartExpeditionRF:InvokeServer(map.Id)
+		if not ok and msg then
+			showBanner(msg, THEME.PanelLight, THEME.Text, 2)
+		end
+		task.wait(1)
+		expeditionBusy = false
+	end)
+
+	btn.Parent = expList
+end
+
 expeditionButton.Activated:Connect(function()
-	if expeditionBusy then return end
-	expeditionBusy = true
-	expeditionButton.Text = "🔦 Traveling..."
-	expeditionButton.AutoButtonColor = false
-
-	-- Close the inventory panel and send the player to the expedition map.
+	-- Open the map chooser (close other panels first)
 	inventoryPanel.Visible = false
-	local ok, msg = StartExpeditionRF:InvokeServer()
-	if not ok and msg then
-		showBanner(msg, THEME.PanelLight, THEME.Text, 2)
-	end
+	collectionPanel.Visible = false
+	expeditionPanel.Visible = not expeditionPanel.Visible
+end)
 
-	task.wait(1)
-	expeditionButton.Text = "🔦 Go on Expedition"
-	expeditionButton.AutoButtonColor = true
-	expeditionBusy = false
+expClose.Activated:Connect(function()
+	expeditionPanel.Visible = false
 end)
 
 leaveButton.Activated:Connect(function()

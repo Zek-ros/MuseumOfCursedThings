@@ -11,10 +11,13 @@ local EX_Z = 70
 local WALL_HEIGHT = 20
 local WALL_THICK = 1
 
-local FLOOR_COLOR = Color3.fromRGB(30, 34, 38)
-local WALL_COLOR  = Color3.fromRGB(22, 26, 30)
-local COLD_LIGHT  = Color3.fromRGB(120, 200, 220)
-local PILLAR_COLOR = Color3.fromRGB(40, 44, 50)
+-- Fallback theme if none is supplied
+local DEFAULT_THEME = {
+	Floor  = Color3.fromRGB(30, 34, 38),
+	Wall   = Color3.fromRGB(22, 26, 30),
+	Pillar = Color3.fromRGB(40, 44, 50),
+	Light  = Color3.fromRGB(120, 200, 220),
+}
 
 local function makePart(origin, parent, name, size, localPos, color, material)
 	local part = Instance.new("Part")
@@ -31,10 +34,17 @@ local function makePart(origin, parent, name, size, localPos, color, material)
 end
 
 --- Build the expedition map at the given origin (center of floor top).
+-- `theme` supplies Floor/Wall/Pillar/Light colors (see ExpeditionMaps).
 -- Returns { Model, SpawnCFrame, ExtractionZone, SpawnPoints = {CFrame...} }.
-function ExpeditionBuilder.Build(origin: CFrame)
+function ExpeditionBuilder.Build(origin: CFrame, theme)
+	theme = theme or DEFAULT_THEME
+	local floorColor  = theme.Floor  or DEFAULT_THEME.Floor
+	local wallColor   = theme.Wall   or DEFAULT_THEME.Wall
+	local pillarColor = theme.Pillar or DEFAULT_THEME.Pillar
+	local lightColor  = theme.Light  or DEFAULT_THEME.Light
+
 	local model = Instance.new("Model")
-	model.Name = "ExpeditionMap"
+	model.Name = "ExpeditionMap_" .. (theme.Id or "default")
 
 	local halfX, halfZ = EX_X / 2, EX_Z / 2
 	local wallY = WALL_HEIGHT / 2
@@ -42,27 +52,27 @@ function ExpeditionBuilder.Build(origin: CFrame)
 	-- Floor
 	makePart(origin, model, "Floor",
 		Vector3.new(EX_X, WALL_THICK, EX_Z),
-		Vector3.new(0, -WALL_THICK / 2, 0), FLOOR_COLOR, Enum.Material.Concrete)
+		Vector3.new(0, -WALL_THICK / 2, 0), floorColor, Enum.Material.Concrete)
 
 	-- Walls
 	makePart(origin, model, "WallBack", Vector3.new(EX_X, WALL_HEIGHT, WALL_THICK),
-		Vector3.new(0, wallY, -halfZ), WALL_COLOR, Enum.Material.Concrete)
+		Vector3.new(0, wallY, -halfZ), wallColor, Enum.Material.Concrete)
 	makePart(origin, model, "WallFront", Vector3.new(EX_X, WALL_HEIGHT, WALL_THICK),
-		Vector3.new(0, wallY, halfZ), WALL_COLOR, Enum.Material.Concrete)
+		Vector3.new(0, wallY, halfZ), wallColor, Enum.Material.Concrete)
 	makePart(origin, model, "WallLeft", Vector3.new(WALL_THICK, WALL_HEIGHT, EX_Z),
-		Vector3.new(-halfX, wallY, 0), WALL_COLOR, Enum.Material.Concrete)
+		Vector3.new(-halfX, wallY, 0), wallColor, Enum.Material.Concrete)
 	makePart(origin, model, "WallRight", Vector3.new(WALL_THICK, WALL_HEIGHT, EX_Z),
-		Vector3.new(halfX, wallY, 0), WALL_COLOR, Enum.Material.Concrete)
+		Vector3.new(halfX, wallY, 0), wallColor, Enum.Material.Concrete)
 
-	-- Atmospheric pillars + cold lights
+	-- Atmospheric pillars + lights
 	for _, px in ipairs({ -22, 0, 22 }) do
 		for _, pz in ipairs({ -16, 16 }) do
 			makePart(origin, model, "Pillar", Vector3.new(4, WALL_HEIGHT, 4),
-				Vector3.new(px, wallY, pz), PILLAR_COLOR, Enum.Material.Slate)
-			local fixture = makePart(origin, model, "ColdLight", Vector3.new(2, 0.4, 2),
+				Vector3.new(px, wallY, pz), pillarColor, Enum.Material.Slate)
+			local fixture = makePart(origin, model, "LightFixture", Vector3.new(2, 0.4, 2),
 				Vector3.new(px, WALL_HEIGHT - 1, pz), Color3.fromRGB(15, 15, 15), Enum.Material.Metal)
 			local light = Instance.new("PointLight")
-			light.Color = COLD_LIGHT
+			light.Color = lightColor
 			light.Brightness = 1.5
 			light.Range = 22
 			light.Parent = fixture
