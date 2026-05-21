@@ -1,0 +1,566 @@
+-- MuseumClient.client.lua
+-- The whole client experience: top-bar HUD (coins / income / danger),
+-- an Expedition button that grants random artifacts, an Inventory panel
+-- for displaying artifacts, plus income popups and chaos-event visuals.
+
+local Players            = game:GetService("Players")
+local ReplicatedStorage  = game:GetService("ReplicatedStorage")
+local TweenService       = game:GetService("TweenService")
+local Lighting           = game:GetService("Lighting")
+
+local player    = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+local RemoteEvents     = ReplicatedStorage:WaitForChild("RemoteEvents")
+local IncomeEvent       = RemoteEvents:WaitForChild("IncomeReceived")
+local ChaosEventRemote  = RemoteEvents:WaitForChild("ChaosEvent")
+local OpenInventoryEvent = RemoteEvents:WaitForChild("OpenInventory")
+local MuseumChangedEvent = RemoteEvents:WaitForChild("MuseumChanged")
+
+local RemoteFunctions  = ReplicatedStorage:WaitForChild("RemoteFunctions")
+local GetInventoryRF   = RemoteFunctions:WaitForChild("GetInventory")
+local DisplayRF        = RemoteFunctions:WaitForChild("DisplayArtifact")
+local UndisplayRF      = RemoteFunctions:WaitForChild("UndisplayArtifact")
+local ExpeditionRF     = RemoteFunctions:WaitForChild("CompleteExpedition")
+
+local Constants = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Constants"))
+
+-- =============================================
+--  COLORS / THEME
+-- =============================================
+local THEME = {
+	Panel     = Color3.fromRGB(24, 22, 30),
+	PanelLight = Color3.fromRGB(38, 35, 48),
+	Accent    = Color3.fromRGB(140, 90, 220),
+	Gold      = Color3.fromRGB(255, 220, 80),
+	Good      = Color3.fromRGB(100, 255, 130),
+	Bad       = Color3.fromRGB(255, 90, 90),
+	Text      = Color3.fromRGB(235, 235, 245),
+}
+
+local DANGER_COLORS = {
+	Low      = Color3.fromRGB(120, 220, 120),
+	Medium   = Color3.fromRGB(245, 215, 90),
+	High     = Color3.fromRGB(245, 140, 70),
+	Critical = Color3.fromRGB(255, 70, 70),
+}
+
+local function rarityColor(rarity: string): Color3
+	local info = Constants.RARITY[rarity]
+	return (info and info.Color) or THEME.Text
+end
+
+-- Turn a numeric danger level into a word + color so players can read risk
+-- at a glance. Higher danger = more frequent chaos events in your museum.
+local function dangerInfo(level: number): (string, Color3)
+	if level <= 0 then
+		return "Safe", Color3.fromRGB(150, 220, 150)
+	elseif level <= 2 then
+		return "Low", Color3.fromRGB(150, 220, 150)
+	elseif level <= 4 then
+		return "Risky", Color3.fromRGB(245, 215, 90)
+	elseif level <= 6 then
+		return "Dangerous", Color3.fromRGB(245, 140, 70)
+	else
+		return "DEADLY", Color3.fromRGB(255, 70, 70)
+	end
+end
+
+-- =============================================
+--  SMALL UI HELPERS
+-- =============================================
+local function corner(parent: Instance, radius: number?)
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(0, radius or 8)
+	c.Parent = parent
+	return c
+end
+
+local function padding(parent: Instance, px: number)
+	local p = Instance.new("UIPadding")
+	p.PaddingLeft = UDim.new(0, px)
+	p.PaddingRight = UDim.new(0, px)
+	p.PaddingTop = UDim.new(0, px)
+	p.PaddingBottom = UDim.new(0, px)
+	p.Parent = parent
+	return p
+end
+
+-- =============================================
+--  ROOT GUI
+-- =============================================
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "MuseumGui"
+screenGui.ResetOnSpawn = false
+screenGui.IgnoreGuiInset = true
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.Parent = playerGui
+
+-- ----- Top bar -----
+local topBar = Instance.new("Frame")
+topBar.Name = "TopBar"
+topBar.Size = UDim2.new(0, 300, 0, 78)
+topBar.Position = UDim2.new(0.5, -150, 0, 12)
+topBar.BackgroundColor3 = THEME.Panel
+topBar.BackgroundTransparency = 0.15
+topBar.Parent = screenGui
+corner(topBar, 10)
+padding(topBar, 8)
+
+local currencyLabel = Instance.new("TextLabel")
+currencyLabel.Name = "CurrencyLabel"
+currencyLabel.Size = UDim2.new(1, 0, 0, 28)
+currencyLabel.BackgroundTransparency = 1
+currencyLabel.TextColor3 = THEME.Gold
+currencyLabel.Font = Enum.Font.GothamBold
+currencyLabel.TextSize = 22
+currencyLabel.TextXAlignment = Enum.TextXAlignment.Left
+currencyLabel.Text = "🪙 ..."
+currencyLabel.Parent = topBar
+
+local incomeLabel = Instance.new("TextLabel")
+incomeLabel.Name = "IncomeLabel"
+incomeLabel.Size = UDim2.new(1, 0, 0, 18)
+incomeLabel.Position = UDim2.new(0, 0, 0, 30)
+incomeLabel.BackgroundTransparency = 1
+incomeLabel.TextColor3 = THEME.Good
+incomeLabel.Font = Enum.Font.Gotham
+incomeLabel.TextSize = 14
+incomeLabel.TextXAlignment = Enum.TextXAlignment.Left
+incomeLabel.Text = "+0 / tick"
+incomeLabel.Parent = topBar
+
+local dangerLabel = Instance.new("TextLabel")
+dangerLabel.Name = "DangerLabel"
+dangerLabel.Size = UDim2.new(1, 0, 0, 18)
+dangerLabel.Position = UDim2.new(0, 0, 0, 48)
+dangerLabel.BackgroundTransparency = 1
+dangerLabel.TextColor3 = DANGER_COLORS.Low
+dangerLabel.Font = Enum.Font.Gotham
+dangerLabel.TextSize = 14
+dangerLabel.TextXAlignment = Enum.TextXAlignment.Left
+dangerLabel.Text = "Danger: 0 (Low)"
+dangerLabel.Parent = topBar
+
+-- ----- Bottom-left buttons -----
+local function makeActionButton(name: string, text: string, color: Color3, order: number)
+	local btn = Instance.new("TextButton")
+	btn.Name = name
+	btn.Size = UDim2.new(0, 190, 0, 46)
+	btn.Position = UDim2.new(0, 16, 1, -16 - (order * 56))
+	btn.AnchorPoint = Vector2.new(0, 1)
+	btn.BackgroundColor3 = color
+	btn.TextColor3 = Color3.fromRGB(20, 18, 26)
+	btn.Font = Enum.Font.GothamBold
+	btn.TextSize = 18
+	btn.Text = text
+	btn.AutoButtonColor = true
+	btn.Parent = screenGui
+	corner(btn, 10)
+	return btn
+end
+
+local expeditionButton = makeActionButton("ExpeditionButton", "🔦 Go on Expedition", THEME.Accent, 1)
+local inventoryButton  = makeActionButton("InventoryButton", "🏛 Inventory", THEME.PanelLight, 0)
+inventoryButton.TextColor3 = THEME.Text
+
+-- =============================================
+--  INVENTORY PANEL
+-- =============================================
+local inventoryPanel = Instance.new("Frame")
+inventoryPanel.Name = "InventoryPanel"
+inventoryPanel.Size = UDim2.new(0, 460, 0, 460)
+inventoryPanel.Position = UDim2.new(0.5, -230, 0.5, -230)
+inventoryPanel.BackgroundColor3 = THEME.Panel
+inventoryPanel.BackgroundTransparency = 0.05
+inventoryPanel.Visible = false
+inventoryPanel.Parent = screenGui
+corner(inventoryPanel, 12)
+
+local panelTitle = Instance.new("TextLabel")
+panelTitle.Size = UDim2.new(1, -60, 0, 44)
+panelTitle.Position = UDim2.new(0, 16, 0, 8)
+panelTitle.BackgroundTransparency = 1
+panelTitle.TextColor3 = THEME.Text
+panelTitle.Font = Enum.Font.GothamBold
+panelTitle.TextSize = 22
+panelTitle.TextXAlignment = Enum.TextXAlignment.Left
+panelTitle.Text = "Your Artifacts"
+panelTitle.Parent = inventoryPanel
+
+local closeButton = Instance.new("TextButton")
+closeButton.Size = UDim2.new(0, 36, 0, 36)
+closeButton.Position = UDim2.new(1, -44, 0, 10)
+closeButton.BackgroundColor3 = THEME.Bad
+closeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+closeButton.Font = Enum.Font.GothamBold
+closeButton.TextSize = 20
+closeButton.Text = "✕"
+closeButton.Parent = inventoryPanel
+corner(closeButton, 8)
+
+local emptyLabel = Instance.new("TextLabel")
+emptyLabel.Size = UDim2.new(1, -32, 0, 40)
+emptyLabel.Position = UDim2.new(0, 16, 0, 60)
+emptyLabel.BackgroundTransparency = 1
+emptyLabel.TextColor3 = Color3.fromRGB(150, 150, 160)
+emptyLabel.Font = Enum.Font.Gotham
+emptyLabel.TextSize = 15
+emptyLabel.TextWrapped = true
+emptyLabel.Text = "No artifacts yet. Go on an expedition to find some!"
+emptyLabel.Visible = false
+emptyLabel.Parent = inventoryPanel
+
+local scroll = Instance.new("ScrollingFrame")
+scroll.Name = "ArtifactList"
+scroll.Size = UDim2.new(1, -24, 1, -64)
+scroll.Position = UDim2.new(0, 12, 0, 56)
+scroll.BackgroundTransparency = 1
+scroll.BorderSizePixel = 0
+scroll.ScrollBarThickness = 6
+scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+scroll.Parent = inventoryPanel
+
+local listLayout = Instance.new("UIListLayout")
+listLayout.Padding = UDim.new(0, 8)
+listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+listLayout.Parent = scroll
+
+-- =============================================
+--  FLOATING TEXT + BANNER HELPERS
+-- =============================================
+local function showFloatingText(text: string, color: Color3, yStart: number?)
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(0, 300, 0, 40)
+	local startY = yStart or 0.7
+	label.Position = UDim2.new(0.5, -150, startY, 0)
+	label.BackgroundTransparency = 1
+	label.TextColor3 = color
+	label.TextStrokeTransparency = 0
+	label.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+	label.Font = Enum.Font.GothamBold
+	label.TextSize = 22
+	label.Text = text
+	label.ZIndex = 50
+	label.Parent = screenGui
+
+	local tween = TweenService:Create(label, TweenInfo.new(1.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+		Position = UDim2.new(0.5, -150, startY - 0.15, 0),
+		TextTransparency = 1,
+		TextStrokeTransparency = 1,
+	})
+	tween:Play()
+	tween.Completed:Connect(function() label:Destroy() end)
+end
+
+local function showBanner(text: string, bgColor: Color3, textColor: Color3, duration: number?)
+	local banner = Instance.new("TextLabel")
+	banner.Size = UDim2.new(0, 520, 0, 50)
+	banner.Position = UDim2.new(0.5, -260, 0.12, 0)
+	banner.BackgroundColor3 = bgColor
+	banner.BackgroundTransparency = 0.15
+	banner.TextColor3 = textColor
+	banner.Font = Enum.Font.GothamBold
+	banner.TextSize = 18
+	banner.TextWrapped = true
+	banner.Text = text
+	banner.ZIndex = 60
+	banner.Parent = screenGui
+	corner(banner, 8)
+
+	task.delay(duration or 3, function()
+		if banner.Parent then banner:Destroy() end
+	end)
+end
+
+-- =============================================
+--  INVENTORY RENDERING
+-- =============================================
+local cachedCurrency = 0
+
+local function updateTopBar(info)
+	if info.Currency then
+		cachedCurrency = info.Currency
+		currencyLabel.Text = "🪙 " .. cachedCurrency
+	end
+	if info.IncomePerTick then
+		incomeLabel.Text = "+" .. info.IncomePerTick .. " / tick"
+	end
+	if info.DangerScore ~= nil then
+		local tier = info.DangerTier or "Low"
+		dangerLabel.Text = string.format("Danger: %d (%s)", info.DangerScore, tier)
+		dangerLabel.TextColor3 = DANGER_COLORS[tier] or DANGER_COLORS.Low
+	end
+end
+
+local function buildArtifactRow(entry, refreshFn)
+	local row = Instance.new("Frame")
+	row.Size = UDim2.new(1, -6, 0, 70)
+	row.BackgroundColor3 = THEME.PanelLight
+	row.LayoutOrder = entry.Index
+	corner(row, 8)
+	padding(row, 8)
+
+	local nameLabel = Instance.new("TextLabel")
+	nameLabel.Size = UDim2.new(1, -110, 0, 20)
+	nameLabel.BackgroundTransparency = 1
+	nameLabel.TextColor3 = rarityColor(entry.Rarity)
+	nameLabel.Font = Enum.Font.GothamBold
+	nameLabel.TextSize = 16
+	nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+	nameLabel.Text = entry.Name
+	nameLabel.Parent = row
+
+	-- A clear, color-coded danger badge so players can read risk at a glance.
+	local dWord, dColor = dangerInfo(entry.DangerLevel)
+	local dangerBadge = Instance.new("TextLabel")
+	dangerBadge.Size = UDim2.new(1, -110, 0, 16)
+	dangerBadge.Position = UDim2.new(0, 0, 0, 22)
+	dangerBadge.BackgroundTransparency = 1
+	dangerBadge.TextColor3 = dColor
+	dangerBadge.Font = Enum.Font.GothamBold
+	dangerBadge.TextSize = 13
+	dangerBadge.TextXAlignment = Enum.TextXAlignment.Left
+	dangerBadge.Text = string.format("☠ Danger: %s (%d)", dWord, entry.DangerLevel)
+	dangerBadge.Parent = row
+
+	local detailLabel = Instance.new("TextLabel")
+	detailLabel.Size = UDim2.new(1, -110, 0, 16)
+	detailLabel.Position = UDim2.new(0, 0, 0, 40)
+	detailLabel.BackgroundTransparency = 1
+	detailLabel.TextColor3 = Color3.fromRGB(180, 180, 190)
+	detailLabel.Font = Enum.Font.Gotham
+	detailLabel.TextSize = 12
+	detailLabel.TextXAlignment = Enum.TextXAlignment.Left
+	detailLabel.Text = string.format(
+		"%s · 💰 %d/tick · 🔒 %s",
+		entry.Rarity, entry.PassiveIncome, entry.ContainmentType
+	)
+	detailLabel.Parent = row
+
+	local toggle = Instance.new("TextButton")
+	toggle.Size = UDim2.new(0, 92, 0, 36)
+	toggle.Position = UDim2.new(1, -92, 0.5, -18)
+	toggle.Font = Enum.Font.GothamBold
+	toggle.TextSize = 14
+	toggle.AutoButtonColor = true
+	corner(toggle, 6)
+
+	if entry.IsDisplayed then
+		toggle.Text = "Remove"
+		toggle.BackgroundColor3 = THEME.Bad
+		toggle.TextColor3 = Color3.fromRGB(255, 255, 255)
+	else
+		toggle.Text = "Display"
+		toggle.BackgroundColor3 = THEME.Good
+		toggle.TextColor3 = Color3.fromRGB(20, 30, 20)
+	end
+	toggle.Parent = row
+
+	toggle.Activated:Connect(function()
+		toggle.Active = false
+		local rf = entry.IsDisplayed and UndisplayRF or DisplayRF
+		local ok, msg = rf:InvokeServer(entry.Index)
+		if not ok and msg then
+			showBanner(msg, THEME.Bad, Color3.fromRGB(255, 255, 255), 2)
+		end
+		refreshFn()
+	end)
+
+	row.Parent = scroll
+end
+
+local refreshInventory -- forward declare
+
+refreshInventory = function()
+	local info = GetInventoryRF:InvokeServer()
+	if not info then return end
+
+	updateTopBar(info)
+
+	-- Clear existing rows (keep the UIListLayout)
+	for _, child in ipairs(scroll:GetChildren()) do
+		if child:IsA("Frame") then
+			child:Destroy()
+		end
+	end
+
+	local count = #info.Inventory
+	emptyLabel.Visible = (count == 0)
+
+	for _, entry in ipairs(info.Inventory) do
+		buildArtifactRow(entry, refreshInventory)
+	end
+
+	panelTitle.Text = string.format("Your Artifacts (%d)", count)
+end
+
+-- =============================================
+--  BUTTON BEHAVIOUR
+-- =============================================
+inventoryButton.Activated:Connect(function()
+	inventoryPanel.Visible = not inventoryPanel.Visible
+	if inventoryPanel.Visible then
+		refreshInventory()
+	end
+end)
+
+closeButton.Activated:Connect(function()
+	inventoryPanel.Visible = false
+end)
+
+local expeditionBusy = false
+expeditionButton.Activated:Connect(function()
+	if expeditionBusy then return end
+	expeditionBusy = true
+	expeditionButton.Text = "🔦 Searching..."
+	expeditionButton.AutoButtonColor = false
+
+	local result = ExpeditionRF:InvokeServer()
+	if result then
+		showBanner(
+			string.format("You recovered: %s  (%s)", result.Name, result.Rarity),
+			rarityColor(result.Rarity):Lerp(THEME.Panel, 0.55),
+			rarityColor(result.Rarity),
+			3.5
+		)
+	else
+		showBanner("The expedition turned up nothing...", THEME.PanelLight, THEME.Text, 2.5)
+	end
+
+	-- Reflect new currency / inventory immediately
+	refreshInventory()
+
+	task.wait(1) -- small cooldown so it can't be spammed
+	expeditionButton.Text = "🔦 Go on Expedition"
+	expeditionButton.AutoButtonColor = true
+	expeditionBusy = false
+end)
+
+-- =============================================
+--  INCOME + CHAOS EVENT HANDLERS
+-- =============================================
+IncomeEvent.OnClientEvent:Connect(function(amount: number)
+	cachedCurrency += amount
+	currencyLabel.Text = "🪙 " .. cachedCurrency
+	showFloatingText("+" .. amount .. " coins", THEME.Good)
+end)
+
+local chaosHandlers = {}
+
+chaosHandlers.FlickerLights = function()
+	-- The actual flicker happens server-side on the museum's own lights
+	-- (so visitors see it too). This is just a flavor banner.
+	showBanner("The lights flicker violently...", Color3.fromRGB(20, 20, 30), Color3.fromRGB(220, 220, 255), 2)
+end
+
+chaosHandlers.CryingSounds = function()
+	showBanner("You hear quiet sobbing from Exhibit A...", Color3.fromRGB(40, 40, 80), Color3.fromRGB(180, 180, 255), 3)
+end
+
+chaosHandlers.WhisperNames = function(data)
+	showBanner("...  " .. (data.Name or player.Name) .. "  ...", Color3.fromRGB(20, 20, 40), Color3.fromRGB(200, 200, 255), 3)
+end
+
+chaosHandlers.ScareVisitors = function()
+	showBanner("Visitors flee in terror!", Color3.fromRGB(60, 20, 20), Color3.fromRGB(255, 200, 200), 2)
+end
+
+chaosHandlers.LaunchProjectile = function()
+	showBanner("BURNING TOAST INCOMING!", Color3.fromRGB(80, 40, 0), Color3.fromRGB(255, 200, 100), 2)
+end
+
+chaosHandlers.StealIncome = function(data)
+	showFloatingText("King's Coin stole " .. (data.Amount or "?") .. " coins!", THEME.Bad, 0.65)
+	cachedCurrency = math.max(0, cachedCurrency - (data.Amount or 0))
+	currencyLabel.Text = "🪙 " .. cachedCurrency
+end
+
+chaosHandlers.GlitchReality = function(data)
+	local fx = Instance.new("ColorCorrectionEffect")
+	fx.Saturation = -1
+	fx.Brightness = 0.2
+	fx.Parent = Lighting
+	task.delay(data.Duration or 5, function()
+		if fx.Parent then fx:Destroy() end
+	end)
+end
+
+chaosHandlers.PredictDisaster = function()
+	showBanner("MEAT COMPUTER PREDICTS: SOMETHING TERRIBLE IS COMING", Color3.fromRGB(20, 0, 0), Color3.fromRGB(255, 50, 50), 4)
+end
+
+chaosHandlers.AlterServer = function(data)
+	showBanner("[DIMENSIONAL BREACH] " .. (data.SourcePlayer or "Someone") .. "'s museum has shattered reality.", Color3.fromRGB(50, 0, 80), Color3.fromRGB(220, 180, 255), 5)
+end
+
+chaosHandlers.RingDuringChaos = function()
+	showBanner("The Teeth Phone is ringing... do NOT answer it.", Color3.fromRGB(40, 40, 40), Color3.fromRGB(255, 255, 200), 3)
+end
+
+chaosHandlers.Teleport = function()
+	showBanner("The Traffic Cone has moved. Again.", Color3.fromRGB(60, 40, 0), Color3.fromRGB(255, 180, 50), 2)
+end
+
+chaosHandlers.MoveWhenUnwatched = function()
+	showBanner("...was the mannequin always standing there?", Color3.fromRGB(30, 30, 30), Color3.fromRGB(200, 200, 200), 3)
+end
+
+chaosHandlers.SpawnClones = function()
+	showBanner("Something has duplicated. This is fine.", Color3.fromRGB(30, 50, 30), Color3.fromRGB(150, 255, 150), 3)
+end
+
+chaosHandlers.OverrideContainment = function()
+	showBanner("WARNING: CONTAINMENT BREACH", Color3.fromRGB(200, 0, 0), Color3.fromRGB(255, 255, 255), 3)
+end
+
+ChaosEventRemote.OnClientEvent:Connect(function(eventName, data)
+	local handler = chaosHandlers[eventName]
+	if handler then
+		task.spawn(handler, data or {})
+		-- A chaos event may change danger/income on the server side; refresh quietly.
+		task.delay(0.2, function()
+			local info = GetInventoryRF:InvokeServer()
+			if info then updateTopBar(info) end
+		end)
+	else
+		warn("[ChaosClient] Unknown event: " .. tostring(eventName))
+	end
+end)
+
+-- =============================================
+--  PEDESTAL INTERACTIONS (server-driven)
+-- =============================================
+-- An empty pedestal's prompt asks the server to open our inventory.
+OpenInventoryEvent.OnClientEvent:Connect(function()
+	inventoryPanel.Visible = true
+	refreshInventory()
+end)
+
+-- The server tells us our museum changed (displayed artifacts / containment).
+-- Keep the top bar accurate, and refresh the panel if it's open.
+MuseumChangedEvent.OnClientEvent:Connect(function()
+	local info = GetInventoryRF:InvokeServer()
+	if info then updateTopBar(info) end
+	if inventoryPanel.Visible then
+		refreshInventory()
+	end
+end)
+
+-- =============================================
+--  INITIAL SYNC
+-- =============================================
+task.spawn(function()
+	-- Retry until the server has loaded our data
+	for _ = 1, 10 do
+		local info = GetInventoryRF:InvokeServer()
+		if info then
+			updateTopBar(info)
+			break
+		end
+		task.wait(0.5)
+	end
+end)
+
+print("[Museum of Cursed Things] Client initialized.")

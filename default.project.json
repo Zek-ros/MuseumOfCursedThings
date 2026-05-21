@@ -1,0 +1,105 @@
+{
+	"name": "MuseumOfCursedThings",
+	"tree": {
+		"$className": "DataModel",
+
+		"ServerScriptService": {
+			"$className": "ServerScriptService",
+			"GameManager": {
+				"$path": "src/server/GameManager.server.lua"
+			},
+			"DataService": {
+				"$path": "src/server/DataService.lua"
+			},
+			"ArtifactService": {
+				"$path": "src/server/ArtifactService.lua"
+			},
+			"MuseumService": {
+				"$path": "src/server/MuseumService.lua"
+			},
+			"PassiveIncomeService": {
+				"$path": "src/server/PassiveIncomeService.lua"
+			},
+			"ChaosManager": {
+				"$path": "src/server/ChaosManager.lua"
+			},
+			"MuseumSignals": {
+				"$path": "src/server/MuseumSignals.lua"
+			},
+			"MuseumBuilder": {
+				"$path": "src/server/MuseumBuilder.lua"
+			},
+			"PedestalService": {
+				"$path": "src/server/PedestalService.lua"
+			},
+			"ChaosEffects": {
+				"$path": "src/server/ChaosEffects.lua"
+			}
+		},
+
+		"ReplicatedStorage": {
+			"$className": "ReplicatedStorage",
+			"Shared": {
+				"$className": "Folder",
+				"ArtifactData": {
+					"$path": "src/shared/ArtifactData.lua"
+				},
+				"Constants": {
+					"$path": "src/shared/Constants.lua"
+				},
+				"MuseumStats": {
+					"$path": "src/shared/MuseumStats.lua"
+				}
+			},
+			"RemoteEvents": {
+				"$className": "Folder",
+				"IncomeReceived": {
+					"$className": "RemoteEvent"
+				},
+				"ChaosEvent": {
+					"$className": "RemoteEvent"
+				},
+				"OpenInventory": {
+					"$className": "RemoteEvent"
+				},
+				"MuseumChanged": {
+					"$className": "RemoteEvent"
+				}
+			},
+			"RemoteFunctions": {
+				"$className": "Folder",
+				"DisplayArtifact": {
+					"$className": "RemoteFunction"
+				},
+				"UndisplayArtifact": {
+					"$className": "RemoteFunction"
+				},
+				"UpgradeContainment": {
+					"$className": "RemoteFunction"
+				},
+				"GetMuseumSummary": {
+					"$className": "RemoteFunction"
+				},
+				"GetArtifactData": {
+					"$className": "RemoteFunction"
+				},
+				"GetInventory": {
+					"$className": "RemoteFunction"
+				},
+				"CompleteExpedition": {
+					"$className": "RemoteFunction"
+				}
+			}
+		},
+
+		"StarterPlayer": {
+			"$className": "StarterPlayer",
+			"StarterPlayerScripts": {
+				"$className": "StarterPlayerScripts",
+				"MuseumClient": {
+					"$path": "src/client/MuseumClient.client.lua"
+				}
+			}
+		}
+	}
+}

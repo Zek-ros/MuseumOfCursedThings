@@ -1,0 +1,10 @@
+# Selene linter configuration.
+# "roblox" std teaches Selene about Roblox globals (game, Instance, task, etc.)
+std = "roblox"
+
+[lints]
+# These two are pure style preferences, not correctness issues:
+#   - one-line `if x then f() end` is intentional and readable here
+#   - UDim2.new(0, x, 0, y) is explicit; we don't require fromOffset
+multiple_statements = "allow"
+roblox_manual_fromscale_or_fromoffset = "allow"

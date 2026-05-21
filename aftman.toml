@@ -1,0 +1,7 @@
+# Toolchain for the Museum of Cursed Things project.
+# Aftman installs the exact versions listed here so every machine
+# building this game uses the same tools. Run `aftman install` to set up.
+
+[tools]
+rojo = "rojo-rbx/rojo@7.6.1"
+selene = "Kampfkarren/selene@0.31.0"
