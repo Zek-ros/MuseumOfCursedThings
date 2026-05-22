@@ -26,7 +26,7 @@ local ExpeditionService = {}
 
 local EXPEDITION_BASE = Vector3.new(-1000, 0, 0)
 local MAP_SPACING = 220
-local PICKUP_RESPAWN = 8
+local PICKUP_RESPAWN = 12 -- slower respawn keeps artifacts scarce
 
 -- State
 local maps = {}             -- [mapId] = { Info, Pickups = {idx=Part}, BaseCF = {idx=CFrame} }
@@ -113,8 +113,8 @@ local function spawnPickup(mapId: string, index: number)
 		carrying[triggerPlayer] = { ArtifactId = artifactId, Rarity = rarity }
 		ExpeditionService.AttachCarry(triggerPlayer, artifactId, rarity)
 		fireState(triggerPlayer, "Carrying", def.Name)
-		-- The artifact attracts monsters while it's being carried.
-		MonsterService.StartHunt(triggerPlayer)
+		-- The artifact attracts monsters while carried — more/faster for scarier ones.
+		MonsterService.StartHunt(triggerPlayer, def.DangerLevel)
 
 		task.delay(PICKUP_RESPAWN, function()
 			if not map.Pickups[index] then
@@ -264,6 +264,9 @@ local function buildMap(def, mapIndex: number)
 		map.BaseCF[index] = cf
 		spawnPickup(def.Id, index)
 	end
+
+	-- Roaming monsters that make just being on the map dangerous.
+	MonsterService.SpawnPatrol(origin, info.HalfX, info.HalfZ, 3, info.Model)
 
 	-- Extraction detection (any map's pad extracts whoever is carrying)
 	info.ExtractionZone.Touched:Connect(function(hit)

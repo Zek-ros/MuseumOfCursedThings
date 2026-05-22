@@ -226,10 +226,10 @@ function ExpeditionBuilder.Build(origin: CFrame, theme)
 	exBillboard.Parent = extraction
 	extraction.Parent = model
 
-	-- Scatter artifact spawn points across the back/middle of the room
+	-- A FEW scattered artifact spawn points (scarce — you have to search for them)
 	local spawnPoints = {}
-	local cols = { -30, -15, 0, 15, 30 }
-	local rows = { -18, 2 }
+	local cols = { -34, 0, 34 }
+	local rows = { -22, 6 }
 	for _, sx in ipairs(cols) do
 		for _, sz in ipairs(rows) do
 			table.insert(spawnPoints, origin * CFrame.new(sx, 3, sz))
@@ -241,7 +241,13 @@ function ExpeditionBuilder.Build(origin: CFrame, theme)
 		SpawnCFrame = spawnCFrame,
 		ExtractionZone = extraction,
 		SpawnPoints = spawnPoints,
+		HalfX = halfX,
+		HalfZ = halfZ,
 	}
 end
+
+-- Exposed so MonsterService can confine patrol monsters to the room.
+ExpeditionBuilder.EX_X = EX_X
+ExpeditionBuilder.EX_Z = EX_Z
 
 return ExpeditionBuilder
