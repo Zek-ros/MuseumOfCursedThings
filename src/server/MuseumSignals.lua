@@ -10,4 +10,8 @@ local MuseumSignals = {}
 -- Fired with (player) whenever a player's set of displayed artifacts changes.
 MuseumSignals.MuseumChanged = Instance.new("BindableEvent")
 
+-- Fired with (player) when someone steps into a museum's hub portal.
+-- HubService listens and teleports them to the hub (avoids a require cycle).
+MuseumSignals.GoToHubRequested = Instance.new("BindableEvent")
+
 return MuseumSignals

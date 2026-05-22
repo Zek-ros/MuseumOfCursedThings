@@ -32,7 +32,6 @@ local UpgradeMuseumRF   = RemoteFunctions:WaitForChild("UpgradeMuseum")
 local GetCollectionRF   = RemoteFunctions:WaitForChild("GetCollection")
 local VisitMuseumRF     = RemoteFunctions:WaitForChild("VisitMuseum")
 local ReturnHomeRF      = RemoteFunctions:WaitForChild("ReturnHome")
-local GoToHubRF         = RemoteFunctions:WaitForChild("GoToHub")
 local JoinQueueRF       = RemoteFunctions:WaitForChild("JoinExpeditionQueue")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
@@ -226,9 +225,9 @@ local function makeNavButton(name: string, text: string, order: number, color: C
 	corner(btn, 8)
 	return btn
 end
--- Hub is accent-colored so it's unmistakable; this is how you get back to queue.
-local hubButton = makeNavButton("HubButton", "Hub & Queue", 0, THEME.Accent)
-local myMuseumButton = makeNavButton("MyMuseumButton", "My Museum", 1, THEME.PanelLight)
+-- You return to the hub by walking into the portal in your museum (not a button).
+-- This button is just a quick "go to my own museum" (handy when visiting others).
+local myMuseumButton = makeNavButton("MyMuseumButton", "My Museum", 0, THEME.PanelLight)
 myMuseumButton.TextColor3 = THEME.Text
 
 -- =============================================
@@ -262,7 +261,7 @@ closeButton.BackgroundColor3 = THEME.Bad
 closeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 closeButton.Font = Enum.Font.GothamBold
 closeButton.TextSize = 20
-closeButton.Text = "✕"
+closeButton.Text = "X"
 closeButton.Parent = inventoryPanel
 corner(closeButton, 8)
 
@@ -325,7 +324,7 @@ collClose.BackgroundColor3 = THEME.Bad
 collClose.TextColor3 = Color3.fromRGB(255, 255, 255)
 collClose.Font = Enum.Font.GothamBold
 collClose.TextSize = 20
-collClose.Text = "✕"
+collClose.Text = "X"
 collClose.Parent = collectionPanel
 corner(collClose, 8)
 
@@ -375,7 +374,7 @@ expClose.BackgroundColor3 = THEME.Bad
 expClose.TextColor3 = Color3.fromRGB(255, 255, 255)
 expClose.Font = Enum.Font.GothamBold
 expClose.TextSize = 20
-expClose.Text = "✕"
+expClose.Text = "X"
 expClose.Parent = expeditionPanel
 corner(expClose, 8)
 
@@ -421,7 +420,7 @@ visitClose.BackgroundColor3 = THEME.Bad
 visitClose.TextColor3 = Color3.fromRGB(255, 255, 255)
 visitClose.Font = Enum.Font.GothamBold
 visitClose.TextSize = 20
-visitClose.Text = "✕"
+visitClose.Text = "X"
 visitClose.Parent = visitPanel
 corner(visitClose, 8)
 
@@ -927,11 +926,7 @@ visitClose.Activated:Connect(function()
 	visitPanel.Visible = false
 end)
 
--- ===== Hub / museum navigation =====
-hubButton.Activated:Connect(function()
-	GoToHubRF:InvokeServer()
-end)
-
+-- ===== Museum navigation (return to the hub via the in-museum portal) =====
 myMuseumButton.Activated:Connect(function()
 	ReturnHomeRF:InvokeServer()
 end)

@@ -28,6 +28,7 @@ local PedestalService = {}
 local museums = {}
 local nextPlotIndex = 0
 local PLOT_SPACING = 160
+local portalDebounce = {} -- [player] = true while a hub-portal teleport is cooling down
 
 -- =============================================
 --  ARTIFACT DISPLAY MODELS
@@ -214,6 +215,20 @@ local function setupMuseum(player: Player)
 	-- Add an interaction prompt to each starting pedestal
 	for _, pedestal in ipairs(built.Pedestals) do
 		attachPrompt(player, pedestal)
+	end
+
+	-- Walk into the hub portal to travel to the hub (HubService listens).
+	if built.Portal then
+		built.Portal.Touched:Connect(function(hit)
+			local toucher = Players:GetPlayerFromCharacter(hit.Parent)
+			if not toucher then return end
+			if portalDebounce[toucher] then return end
+			portalDebounce[toucher] = true
+			MuseumSignals.GoToHubRequested:Fire(toucher)
+			task.delay(2, function()
+				portalDebounce[toucher] = nil
+			end)
+		end)
 	end
 
 	-- Note: spawning is owned by HubService now (players spawn in the hub and

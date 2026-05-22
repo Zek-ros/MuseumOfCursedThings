@@ -131,10 +131,43 @@ function MuseumBuilder.Build(origin: CFrame, ownerName: string)
 	spawn.Duration = 0
 	spawn.Parent = model
 
+	-- Hub portal on the left wall (walk into it to travel to the hub).
+	-- Placed away from the spawn-arrival point so you don't bounce straight back.
+	local portalColor = Color3.fromRGB(150, 90, 230)
+	local px = -halfX + 1.5
+	makePart(origin, model, "PortalFrame", Vector3.new(1, 11, 1), Vector3.new(px, 5.5, -3.5), portalColor, Enum.Material.Neon)
+	makePart(origin, model, "PortalFrame", Vector3.new(1, 11, 1), Vector3.new(px, 5.5, 3.5), portalColor, Enum.Material.Neon)
+	makePart(origin, model, "PortalFrame", Vector3.new(1.2, 1, 8), Vector3.new(px, 11, 0), portalColor, Enum.Material.Neon)
+
+	local portal = makePart(origin, model, "HubPortal", Vector3.new(0.6, 10, 6.5), Vector3.new(px + 0.4, 5, 0), portalColor, Enum.Material.Neon)
+	portal.CanCollide = false
+	portal.Transparency = 0.35
+	local portalLight = Instance.new("PointLight")
+	portalLight.Color = portalColor
+	portalLight.Range = 16
+	portalLight.Brightness = 3
+	portalLight.Parent = portal
+
+	local portalBillboard = Instance.new("BillboardGui")
+	portalBillboard.Size = UDim2.new(0, 140, 0, 40)
+	portalBillboard.StudsOffset = Vector3.new(0, 6.5, 0)
+	portalBillboard.AlwaysOnTop = false
+	portalBillboard.MaxDistance = 60
+	local portalLabel = Instance.new("TextLabel")
+	portalLabel.Size = UDim2.fromScale(1, 1)
+	portalLabel.BackgroundTransparency = 1
+	portalLabel.Text = "TO HUB ▶"
+	portalLabel.TextColor3 = Color3.fromRGB(230, 200, 255)
+	portalLabel.Font = Enum.Font.GothamBold
+	portalLabel.TextScaled = true
+	portalLabel.Parent = portalBillboard
+	portalBillboard.Parent = portal
+
 	return {
 		Model = model,
 		Pedestals = pedestals,
 		Spawn = spawn,
+		Portal = portal,
 	}
 end
 

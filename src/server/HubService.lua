@@ -12,6 +12,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ExpeditionService = require(script.Parent.ExpeditionService)
 local PedestalService   = require(script.Parent.PedestalService)
 local HubBuilder        = require(script.Parent.HubBuilder)
+local MuseumSignals     = require(script.Parent.MuseumSignals)
 local ExpeditionMaps    = require(ReplicatedStorage.Shared.ExpeditionMaps)
 
 local RemoteFunctions = ReplicatedStorage:WaitForChild("RemoteFunctions")
@@ -53,6 +54,11 @@ function HubService.GoToHub(player: Player)
 	teleportToHub(player)
 	return true
 end
+
+-- Museum hub-portals fire this signal when a player walks into them.
+MuseumSignals.GoToHubRequested.Event:Connect(function(player)
+	HubService.GoToHub(player)
+end)
 
 -- =============================================
 --  QUEUE

@@ -218,7 +218,7 @@ function ExpeditionBuilder.Build(origin: CFrame, theme)
 	local exLabel = Instance.new("TextLabel")
 	exLabel.Size = UDim2.fromScale(1, 1)
 	exLabel.BackgroundTransparency = 1
-	exLabel.Text = "⮟ EXTRACTION ⮟"
+	exLabel.Text = "▼ EXTRACTION ▼"
 	exLabel.TextColor3 = Color3.fromRGB(120, 255, 170)
 	exLabel.Font = Enum.Font.GothamBold
 	exLabel.TextScaled = true
