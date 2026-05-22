@@ -13,13 +13,13 @@ return {
 			Key = "DoubleIncome",
 			Name = "Double Income",
 			Description = "Permanently DOUBLE every coin your museum earns.",
-			GamePassId = 0, -- <- paste your game pass id here
+			GamePassId = 1852493563,
 		},
 		{
 			Key = "VIP",
 			Name = "VIP Curator",
 			Description = "+50% income and +50% daily reward, forever. Support the game!",
-			GamePassId = 0, -- <- paste your game pass id here
+			GamePassId = 1854407532,
 		},
 	},
 
@@ -29,21 +29,21 @@ return {
 			Name = "Pouch of Coins",
 			Description = "+2,500 coins",
 			Coins = 2500,
-			ProductId = 0, -- <- paste your developer product id here
+			ProductId = 3596795293,
 		},
 		{
 			Key = "coins_large",
 			Name = "Chest of Coins",
 			Description = "+25,000 coins",
 			Coins = 25000,
-			ProductId = 0,
+			ProductId = 3596796300,
 		},
 		{
 			Key = "coins_mega",
 			Name = "Vault of Coins",
 			Description = "+150,000 coins",
 			Coins = 150000,
-			ProductId = 0,
+			ProductId = 3596796779,
 		},
 	},
 }
