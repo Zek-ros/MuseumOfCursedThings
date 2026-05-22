@@ -1076,6 +1076,17 @@ chaosHandlers.OverrideContainment = function()
 	showBanner("WARNING: CONTAINMENT BREACH", Color3.fromRGB(200, 0, 0), Color3.fromRGB(255, 255, 255), 3)
 end
 
+chaosHandlers.ArtifactEscaped = function(data)
+	showBanner(
+		string.format("CONTAINMENT FAILURE: %s escaped and is off display! Re-display it (and upgrade its containment).",
+			data.Name or "An artifact"),
+		Color3.fromRGB(120, 20, 20), Color3.fromRGB(255, 150, 150), 4.5)
+	-- Refresh HUD/inventory so the income drop + missing artifact show immediately
+	local info = GetInventoryRF:InvokeServer()
+	if info then updateTopBar(info) end
+	if inventoryPanel.Visible then refreshInventory() end
+end
+
 ChaosEventRemote.OnClientEvent:Connect(function(eventName, data)
 	local handler = chaosHandlers[eventName]
 	if handler then

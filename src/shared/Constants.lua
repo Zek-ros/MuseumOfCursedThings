@@ -52,6 +52,24 @@ Constants.DANGER_INCOME_MULTIPLIER = {
 	Critical = 2.1,
 }
 
+-- The "risk" half of the loop: when chaos fires, the chance (per event) that an
+-- artifact breaches containment and is knocked off display. Higher danger =
+-- more breaches. Good containment lowers each artifact's escape odds.
+Constants.CHAOS_BREACH_CHANCE = {
+	Low      = 0.0,
+	Medium   = 0.08,
+	High     = 0.20,
+	Critical = 0.35,
+}
+
+-- Fraction of current coins the income-theft chaos steals, by danger tier.
+Constants.CHAOS_THEFT_PCT = {
+	Low      = 0.02,
+	Medium   = 0.035,
+	High     = 0.055,
+	Critical = 0.08,
+}
+
 -- Ordered containment upgrade path for the shop (cheapest/weakest -> strongest).
 Constants.CONTAINMENT_ORDER = {
 	"GlassCase",

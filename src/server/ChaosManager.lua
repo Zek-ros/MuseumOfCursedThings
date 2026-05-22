@@ -10,6 +10,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local DataService    = require(script.Parent.DataService)
 local PedestalService = require(script.Parent.PedestalService)
 local VisitorService = require(script.Parent.VisitorService)
+local MuseumService  = require(script.Parent.MuseumService)
 local ChaosEffects   = require(script.Parent.ChaosEffects)
 local ArtifactData   = require(ReplicatedStorage.Shared.ArtifactData)
 local Constants      = require(ReplicatedStorage.Shared.Constants)
@@ -71,7 +72,9 @@ end
 Effects.StealIncome = function(player)
 	local data = DataService.GetData(player)
 	if not data then return end
-	local stolen = math.clamp(math.floor(data.Currency * 0.02), 1, 50)
+	local tier = MuseumStats.GetDangerTier(MuseumStats.CalculateDanger(data))
+	local pct = Constants.CHAOS_THEFT_PCT[tier] or 0.02
+	local stolen = math.max(1, math.floor(data.Currency * pct))
 	DataService.UpdateCurrency(player, -stolen)
 	ChaosEvent:FireClient(player, "StealIncome", { Amount = stolen })
 end
@@ -106,6 +109,38 @@ local function gatherPossibleEffects(data): { string }
 		end
 	end
 	return pool
+end
+
+-- A containment breach: knock one displayed artifact off display. Weighted by
+-- effective danger (dangerous + poorly-contained artifacts escape more often),
+-- so investing in containment genuinely protects your exhibits.
+local function breachArtifact(player: Player, data)
+	local candidates = {}
+	for i, artifact in ipairs(data.Artifacts) do
+		if artifact.IsDisplayed then
+			local def = ArtifactData.Artifacts[artifact.ArtifactId]
+			if def then
+				local containment = ArtifactData.ContainmentTypes[artifact.ContainmentType]
+				local reduction = containment and containment.DangerReduction or 0
+				local weight = math.max(0.5, def.DangerLevel - reduction)
+				table.insert(candidates, { Index = i, Def = def, Weight = weight })
+			end
+		end
+	end
+	if #candidates == 0 then return end
+
+	local total = 0
+	for _, c in ipairs(candidates) do total += c.Weight end
+	local roll = math.random() * total
+	local picked = candidates[#candidates]
+	for _, c in ipairs(candidates) do
+		roll -= c.Weight
+		if roll <= 0 then picked = c break end
+	end
+
+	-- Undisplay it (fires MuseumChanged -> pedestal + UI update + income drop)
+	MuseumService.UndisplayArtifact(player, picked.Index)
+	ChaosEvent:FireClient(player, "ArtifactEscaped", { Name = picked.Def.Name })
 end
 
 -- =============================================
@@ -150,6 +185,12 @@ task.spawn(function()
 					-- Real visitors panic and scatter when scared
 					if chosen == "ScareVisitors" then
 						VisitorService.Panic(player)
+					end
+
+					-- Real danger: a chance the chaos breaches containment and
+					-- knocks an artifact off display (scales with danger tier).
+					if math.random() < (Constants.CHAOS_BREACH_CHANCE[tier] or 0) then
+						breachArtifact(player, data)
 					end
 
 					data.Statistics.ChaosEventsSurvived += 1
