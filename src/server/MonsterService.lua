@@ -1,16 +1,22 @@
 -- MonsterService.lua (ModuleScript)
--- Two kinds of threat on expedition maps:
---   * PATROL monsters roam each map and chase any player who gets close — so just
---     being in there is dangerous.
---   * HUNT monsters spawn when you pick up an artifact and converge on you; a more
---     dangerous artifact summons MORE and FASTER hunters.
--- Catching a player drops their carried artifact (via the Caught BindableEvent) and
--- briefly SLOWS them. Monsters are placeholder figures (ModelFactory), swappable.
+-- Threats on expedition maps. Monsters STALK — they are slow and creepy and
+-- never faster than you — rather than punish your movement:
+--   * PATROL monsters roam each maze and chase players who get close.
+--   * HUNT monsters spawn when you pick up an artifact and converge on you.
+-- When a monster catches a player who is CARRYING, it STEALS the artifact and
+-- flees into the dark as a glowing THIEF; chase the thief down and tackle it to
+-- wrench the artifact back, or it escapes after a while and the loot is lost.
+-- Catching an EMPTY-HANDED player does nothing but a fright (no movement penalty).
+-- ExpeditionService wires steal/recover/escape to carry state via the OnSteal /
+-- OnRecover / OnStealEscape callbacks. Monsters are placeholder figures
+-- (ModelFactory), swappable for real models later.
 
-local Players    = game:GetService("Players")
-local RunService = game:GetService("RunService")
+local Players           = game:GetService("Players")
+local RunService        = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local ModelFactory = require(script.Parent.ModelFactory)
+local Constants    = require(ReplicatedStorage.Shared.Constants)
 
 local MonsterService = {}
 
@@ -18,21 +24,35 @@ local MONSTER_MODEL_ID = nil
 
 local CATCH_RADIUS    = 6
 local SPAWN_DISTANCE  = 34
-local PATROL_SPEED    = 7    -- wandering
-local PATROL_CHASE    = 11   -- chasing (player walks 16, so escapable if you keep moving)
-local AGGRO_RANGE     = 38   -- patrol notices you within this
-local HUNT_SPEED_BASE = 12
-local SLOW_WALKSPEED  = 8
-local SLOW_DURATION   = 2.5
-local CATCH_COOLDOWN  = 3
+local PATROL_SPEED    = 6    -- wandering (a slow stalk)
+local PATROL_CHASE    = 9    -- chasing (player walks 16 — always escapable)
+local AGGRO_RANGE     = 36   -- patrol notices you within this
+local HUNT_SPEED_BASE = 10
+local HUNT_SPEED_MAX  = 14
+local CATCH_COOLDOWN  = 2
 
--- [player] = { Monsters = { Model }, Speed = n }
-local hunts = {}
--- array of { Model, Center = Vector3, HalfX, HalfZ, Target = Vector3 }
-local patrols = {}
+local THIEF_SPEED       = 13 -- flees fast, but a running player (16) can catch up
+local THIEF_RECOVER     = 7  -- tackle the thief within this to wrench the loot back
+local THIEF_ESCAPE_TIME = 18 -- after this long it gets away and the loot is lost
+
+-- Callbacks set by ExpeditionService (it owns carry/artifact state):
+--   OnSteal(player) -> artifactId?, rarity?   (remove + return their carry)
+--   OnRecover(player, artifactId, rarity)     (give the carry back)
+--   OnStealEscape(player?, artifactId)
+MonsterService.OnSteal = nil
+MonsterService.OnRecover = nil
+MonsterService.OnStealEscape = nil
+
+local hunts = {}         -- [player] = { Monsters = {Model}, Speed }
+local patrols = {}       -- array of { Model, Center, HalfX, HalfZ, Target }
+local thieves = {}       -- array of { Model, ArtifactId, Rarity, Center, HalfX, HalfZ, Born, Victim, Target }
+local mapRegions = {}    -- array of { Center, HalfX, HalfZ }
 local catchCooldown = {} -- [player] = true
 
-MonsterService.Caught = Instance.new("BindableEvent")
+local function rarityColor(rarity: string?): Color3
+	local info = rarity and Constants.RARITY[rarity]
+	return (info and info.Color) or Color3.fromRGB(255, 255, 255)
+end
 
 local function makeMonster(): Model
 	return ModelFactory.Resolve(MONSTER_MODEL_ID, function()
@@ -49,26 +69,6 @@ local function makeMonster(): Model
 	end)
 end
 
--- Caught: drop the carry (listeners) + slow the player for a moment.
-local function catchPlayer(player: Player)
-	if catchCooldown[player] then return end
-	catchCooldown[player] = true
-	MonsterService.Caught:Fire(player)
-
-	local char = player.Character
-	local hum = char and char:FindFirstChildOfClass("Humanoid")
-	if hum then
-		hum.WalkSpeed = SLOW_WALKSPEED
-		task.delay(SLOW_DURATION, function()
-			local h = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-			if h then h.WalkSpeed = 16 end
-		end)
-	end
-	task.delay(CATCH_COOLDOWN, function()
-		catchCooldown[player] = nil
-	end)
-end
-
 -- Move a monster horizontally toward `targetPos`; returns horizontal distance.
 local function chaseStep(monster: Model, targetPos: Vector3, speed: number, dt: number): number
 	local cur = monster:GetPivot().Position
@@ -79,6 +79,114 @@ local function chaseStep(monster: Model, targetPos: Vector3, speed: number, dt: 
 		ModelFactory.Place(monster, CFrame.lookAt(newPos, newPos + flat.Unit))
 	end
 	return dist
+end
+
+local function flatDist(a: Vector3, b: Vector3): number
+	return (Vector3.new(a.X, 0, a.Z) - Vector3.new(b.X, 0, b.Z)).Magnitude
+end
+
+local function clampToBounds(pos: Vector3, center: Vector3, hx: number, hz: number): Vector3
+	return Vector3.new(
+		math.clamp(pos.X, center.X - hx + 4, center.X + hx - 4),
+		pos.Y,
+		math.clamp(pos.Z, center.Z - hz + 4, center.Z + hz - 4))
+end
+
+local function randomPoint(center: Vector3, hx: number, hz: number): Vector3
+	return center + Vector3.new((math.random() * 2 - 1) * (hx - 8), 0, (math.random() * 2 - 1) * (hz - 8))
+end
+
+-- Which registered map region contains this position (for bounding a thief).
+local function regionFor(pos: Vector3)
+	for _, r in ipairs(mapRegions) do
+		if math.abs(pos.X - r.Center.X) <= r.HalfX and math.abs(pos.Z - r.Center.Z) <= r.HalfZ then
+			return r
+		end
+	end
+	return nil
+end
+
+-- Nearest player whose character is inside the given region bounds.
+local function nearestPlayerInRegion(center: Vector3, hx: number, hz: number, fromPos: Vector3)
+	local best, bestPos, bestDist
+	for _, player in ipairs(Players:GetPlayers()) do
+		local char = player.Character
+		local hrp = char and char:FindFirstChild("HumanoidRootPart")
+		if hrp then
+			local pos = hrp.Position
+			if math.abs(pos.X - center.X) <= hx and math.abs(pos.Z - center.Z) <= hz then
+				local d = flatDist(pos, fromPos)
+				if not bestDist or d < bestDist then
+					best, bestPos, bestDist = player, pos, d
+				end
+			end
+		end
+	end
+	return best, bestPos, bestDist
+end
+
+-- =============================================
+--  THIEVES (flee with stolen loot)
+-- =============================================
+local function spawnThief(victim: Player, pos: Vector3, artifactId: string, rarity: string, region)
+	if not region then
+		-- Nowhere to bound a thief; treat as an immediate escape so the loot is
+		-- not silently swallowed.
+		if MonsterService.OnStealEscape then
+			MonsterService.OnStealEscape(victim, artifactId)
+		end
+		return
+	end
+
+	local monster = makeMonster()
+	ModelFactory.Place(monster, CFrame.new(pos))
+
+	-- A glowing loot orb so you can spot (and chase) the thief in the dark.
+	local orb = Instance.new("Part")
+	orb.Name = "StolenLoot"
+	orb.Anchored = true
+	orb.CanCollide = false
+	orb.Size = Vector3.new(1.6, 1.6, 1.6)
+	orb.Material = Enum.Material.Neon
+	orb.Color = rarityColor(rarity)
+	orb.CFrame = monster:GetPivot() * CFrame.new(0, 3.6, 0)
+	local orbLight = Instance.new("PointLight")
+	orbLight.Color = orb.Color
+	orbLight.Range = 10
+	orbLight.Brightness = 2
+	orbLight.Parent = orb
+	orb.Parent = monster
+
+	monster.Parent = workspace
+	table.insert(thieves, {
+		Model = monster, ArtifactId = artifactId, Rarity = rarity,
+		Center = region.Center, HalfX = region.HalfX, HalfZ = region.HalfZ,
+		Born = os.clock(), Victim = victim,
+	})
+end
+
+-- Caught: steal the carry and flee with it, or — if empty-handed — just a fright.
+local function catchPlayer(player: Player, monster: Model?, region)
+	if catchCooldown[player] then return end
+	catchCooldown[player] = true
+	task.delay(CATCH_COOLDOWN, function()
+		catchCooldown[player] = nil
+	end)
+
+	local artifactId, rarity
+	if MonsterService.OnSteal then
+		artifactId, rarity = MonsterService.OnSteal(player)
+	end
+	if not artifactId then
+		return -- empty-handed: no penalty, just the scare
+	end
+
+	-- They had loot: end the converging hunt, let a thief flee with it.
+	MonsterService.StopHunt(player)
+	local pos = (monster and monster:GetPivot().Position)
+		or (player.Character and player.Character:GetPivot().Position)
+	region = region or (pos and regionFor(pos))
+	spawnThief(player, pos or Vector3.new(), artifactId, rarity, region)
 end
 
 -- =============================================
@@ -92,7 +200,7 @@ function MonsterService.StartHunt(player: Player, danger: number?)
 
 	danger = danger or 2
 	local count = math.clamp(1 + math.floor(danger / 2), 1, 4)
-	local speed = math.clamp(HUNT_SPEED_BASE + danger * 0.5, HUNT_SPEED_BASE, 16)
+	local speed = math.clamp(HUNT_SPEED_BASE + danger * 0.5, HUNT_SPEED_BASE, HUNT_SPEED_MAX)
 
 	local hunt = { Monsters = {}, Speed = speed }
 	hunts[player] = hunt
@@ -118,50 +226,25 @@ end
 -- =============================================
 --  PATROLS (always roaming each map)
 -- =============================================
-local function randomPoint(p): Vector3
-	return p.Center + Vector3.new(
-		(math.random() * 2 - 1) * (p.HalfX - 8), 0, (math.random() * 2 - 1) * (p.HalfZ - 8))
-end
-
 --- Spawn `count` roaming monsters bound to a map region.
 function MonsterService.SpawnPatrol(origin: CFrame, halfX: number, halfZ: number, count: number, parent: Instance)
 	local center = origin.Position
+	table.insert(mapRegions, { Center = center, HalfX = halfX, HalfZ = halfZ })
 	for _ = 1, count do
 		local monster = makeMonster()
 		local entry = { Model = monster, Center = center, HalfX = halfX, HalfZ = halfZ }
-		entry.Target = randomPoint(entry)
+		entry.Target = randomPoint(center, halfX, halfZ)
 		ModelFactory.Place(monster, CFrame.new(entry.Target))
 		monster.Parent = parent or workspace
 		table.insert(patrols, entry)
 	end
 end
 
--- Nearest player whose character is inside this patrol's map bounds.
-local function nearestInBounds(p): (Player?, Vector3?)
-	local center, mx, mz = p.Center, p.HalfX, p.HalfZ
-	local monsterPos = p.Model:GetPivot().Position
-	local best, bestPos, bestDist
-	for _, player in ipairs(Players:GetPlayers()) do
-		local char = player.Character
-		local hrp = char and char:FindFirstChild("HumanoidRootPart")
-		if hrp then
-			local pos = hrp.Position
-			if math.abs(pos.X - center.X) <= mx and math.abs(pos.Z - center.Z) <= mz then
-				local d = (Vector3.new(pos.X, 0, pos.Z) - Vector3.new(monsterPos.X, 0, monsterPos.Z)).Magnitude
-				if not bestDist or d < bestDist then
-					best, bestPos, bestDist = player, pos, d
-				end
-			end
-		end
-	end
-	return best, bestPos
-end
-
 -- =============================================
---  UPDATE LOOP (hunts + patrols)
+--  UPDATE LOOP (hunts + patrols + thieves)
 -- =============================================
 RunService.Heartbeat:Connect(function(dt)
-	-- Hunts
+	-- Hunts converge on the carrier
 	for player, hunt in pairs(hunts) do
 		local char = player.Character
 		local hrp = char and char:FindFirstChild("HumanoidRootPart")
@@ -170,23 +253,22 @@ RunService.Heartbeat:Connect(function(dt)
 				if monster.Parent then
 					local dist = chaseStep(monster, hrp.Position, hunt.Speed, dt)
 					if dist <= CATCH_RADIUS then
-						catchPlayer(player)
+						catchPlayer(player, monster, regionFor(hrp.Position))
 					end
 				end
 			end
 		end
 	end
 
-	-- Patrols
+	-- Patrols roam, and chase anyone who strays too close
 	for _, p in ipairs(patrols) do
 		if p.Model.Parent then
-			local targetPlayer, targetPos = nearestInBounds(p)
+			local targetPlayer, targetPos = nearestPlayerInRegion(p.Center, p.HalfX, p.HalfZ, p.Model:GetPivot().Position)
 			if targetPlayer and targetPos then
-				local monsterPos = p.Model:GetPivot().Position
-				local flatDist = (Vector3.new(targetPos.X, 0, targetPos.Z) - Vector3.new(monsterPos.X, 0, monsterPos.Z)).Magnitude
-				if flatDist <= AGGRO_RANGE then
-					if flatDist <= CATCH_RADIUS then
-						catchPlayer(targetPlayer)
+				local d = flatDist(targetPos, p.Model:GetPivot().Position)
+				if d <= AGGRO_RANGE then
+					if d <= CATCH_RADIUS then
+						catchPlayer(targetPlayer, p.Model, { Center = p.Center, HalfX = p.HalfX, HalfZ = p.HalfZ })
 					else
 						chaseStep(p.Model, targetPos, PATROL_CHASE, dt)
 					end
@@ -196,12 +278,61 @@ RunService.Heartbeat:Connect(function(dt)
 			-- Wander
 			local dist = chaseStep(p.Model, p.Target, PATROL_SPEED, dt)
 			if dist < 3 then
-				p.Target = randomPoint(p)
+				p.Target = randomPoint(p.Center, p.HalfX, p.HalfZ)
+			end
+		end
+	end
+
+	-- Thieves flee with stolen loot until caught or escaped
+	for i = #thieves, 1, -1 do
+		local t = thieves[i]
+		if not t.Model.Parent then
+			table.remove(thieves, i)
+		else
+			local tpos = t.Model:GetPivot().Position
+			local np, npos = nearestPlayerInRegion(t.Center, t.HalfX, t.HalfZ, tpos)
+			local removed = false
+
+			if npos then
+				local d = flatDist(npos, tpos)
+				if d <= THIEF_RECOVER then
+					-- Tackled: give the loot back to whoever caught it.
+					if MonsterService.OnRecover and np then
+						MonsterService.OnRecover(np, t.ArtifactId, t.Rarity)
+					end
+					t.Model:Destroy()
+					table.remove(thieves, i)
+					removed = true
+				else
+					-- Flee directly away from the nearest player, staying in bounds.
+					local away = Vector3.new(tpos.X - npos.X, 0, tpos.Z - npos.Z)
+					away = away.Magnitude > 0.1 and away.Unit or Vector3.new(1, 0, 0)
+					local goal = clampToBounds(tpos + away * 12, t.Center, t.HalfX, t.HalfZ)
+					chaseStep(t.Model, goal, THIEF_SPEED, dt)
+				end
+			else
+				-- No one nearby: drift around so it doesn't just stand still.
+				t.Target = t.Target or randomPoint(t.Center, t.HalfX, t.HalfZ)
+				local d = chaseStep(t.Model, t.Target, PATROL_SPEED, dt)
+				if d < 3 then
+					t.Target = randomPoint(t.Center, t.HalfX, t.HalfZ)
+				end
+			end
+
+			if not removed and (os.clock() - t.Born > THIEF_ESCAPE_TIME) then
+				if MonsterService.OnStealEscape then
+					MonsterService.OnStealEscape(t.Victim, t.ArtifactId)
+				end
+				t.Model:Destroy()
+				table.remove(thieves, i)
 			end
 		end
 	end
 end)
 
-Players.PlayerRemoving:Connect(MonsterService.StopHunt)
+Players.PlayerRemoving:Connect(function(player)
+	MonsterService.StopHunt(player)
+	catchCooldown[player] = nil
+end)
 
 return MonsterService

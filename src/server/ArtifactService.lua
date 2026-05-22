@@ -84,8 +84,23 @@ end
 
 --- Roll a random artifact WITHOUT granting it. Returns artifactId, rarity.
 -- Used by ExpeditionService to populate collectible pickups on the map.
-function ArtifactService.RollArtifact(): (string?, string?)
-	return rollArtifact()
+-- `luck` (>= 1) rolls that many times and keeps the RAREST result, so deeper
+-- mazes can bias toward better loot. luck = 1 is a plain single roll.
+function ArtifactService.RollArtifact(luck: number?): (string?, string?)
+	local rolls = math.max(1, math.floor(luck or 1))
+	local bestId, bestRarity, bestWeight
+	for _ = 1, rolls do
+		local id, rarity = rollArtifact()
+		if id and rarity then
+			local info = Constants.RARITY[rarity]
+			local weight = (info and info.Weight) or math.huge
+			-- Smaller weight = rarer; keep the rarest seen.
+			if not bestWeight or weight < bestWeight then
+				bestId, bestRarity, bestWeight = id, rarity, weight
+			end
+		end
+	end
+	return bestId, bestRarity
 end
 
 -- =============================================

@@ -177,7 +177,10 @@ function ExpeditionBuilder.Build(origin: CFrame, def)
 	end
 
 	-- Artifact spawn pool: random cells, low to the floor, deep in the dark maze.
-	local poolCount = math.min(14, #cells)
+	-- Scales with maze size so bigger mazes spread loot over more possible spots
+	-- (more searching) without flooding the place.
+	local poolCount = math.clamp(math.floor(#cells / 7), 12, 32)
+	poolCount = math.min(poolCount, #cells)
 	local spawnPoints = {}
 	for i = 1, poolCount do
 		local p = cellPos(cells[i][1], cells[i][2])
@@ -185,8 +188,9 @@ function ExpeditionBuilder.Build(origin: CFrame, def)
 	end
 
 	-- Crates for cover, in cells the artifacts don't use (disjoint, so nothing
-	-- spawns inside a crate).
-	local crateCount = math.min(6, #cells - poolCount)
+	-- spawns inside a crate). More cover in bigger mazes.
+	local crateCount = math.clamp(math.floor(#cells / 11), 5, 20)
+	crateCount = math.min(crateCount, #cells - poolCount)
 	for i = 1, crateCount do
 		local cell = cells[poolCount + i]
 		local p = cellPos(cell[1], cell[2])

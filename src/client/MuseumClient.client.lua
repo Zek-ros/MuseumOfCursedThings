@@ -1643,7 +1643,7 @@ local function removeFlashlight()
 	end
 end
 
-local function enterDarkness()
+local function enterDarkness(fogEnd: number?)
 	if not savedLighting then
 		savedLighting = {
 			Ambient = Lighting.Ambient,
@@ -1662,7 +1662,8 @@ local function enterDarkness()
 	Lighting.ClockTime = 0
 	Lighting.FogColor = Color3.fromRGB(0, 0, 0)
 	Lighting.FogStart = 20
-	Lighting.FogEnd = 75
+	-- Per-maze view distance: darker, scarier mazes send a smaller fog end.
+	Lighting.FogEnd = fogEnd or 75
 	attachFlashlight()
 end
 
@@ -1696,7 +1697,7 @@ ExpeditionStateEvent.OnClientEvent:Connect(function(info)
 		expeditionButton.Visible = false
 		leaveButton.Visible = true
 		queuePanel.Visible = false -- the queue launched
-		enterDarkness()
+		enterDarkness(info.Fog)
 		showBanner("It's pitch black in here. Use your flashlight to find an artifact, then carry it to the green EXTRACTION pad!",
 			Color3.fromRGB(20, 40, 30), Color3.fromRGB(160, 255, 200), 4.5)
 	elseif state == "Carrying" then
@@ -1704,6 +1705,15 @@ ExpeditionStateEvent.OnClientEvent:Connect(function(info)
 			Color3.fromRGB(30, 30, 50), Color3.fromRGB(220, 220, 255), 3)
 	elseif state == "AlreadyCarrying" then
 		showBanner("You can only carry one artifact at a time!", THEME.PanelLight, THEME.Text, 2)
+	elseif state == "Stolen" then
+		showBanner(string.format("A monster snatched %s and bolted! Chase the glowing thief down and tackle it!", info.ArtifactName or "your artifact"),
+			Color3.fromRGB(60, 20, 20), Color3.fromRGB(255, 170, 170), 4)
+	elseif state == "Recovered" then
+		showBanner(string.format("You wrenched %s back! Now get it to the EXTRACTION pad!", info.ArtifactName or "your artifact"),
+			Color3.fromRGB(20, 40, 30), Color3.fromRGB(160, 255, 200), 3)
+	elseif state == "StealEscaped" then
+		showBanner(string.format("The thief vanished into the dark with %s. It's gone.", info.ArtifactName or "the artifact"),
+			Color3.fromRGB(40, 20, 40), Color3.fromRGB(220, 180, 220), 3.5)
 	elseif state == "Extracted" then
 		expeditionButton.Visible = true
 		leaveButton.Visible = false

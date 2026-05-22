@@ -25,9 +25,10 @@ local ExpeditionStateEvent = RemoteEvents:WaitForChild("ExpeditionState")
 local ExpeditionService = {}
 
 local EXPEDITION_BASE = Vector3.new(-1000, 0, 0)
-local MAP_SPACING = 220
+local MAP_SPACING = 320 -- mazes are big now; keep them well clear of each other
 local PICKUP_RESPAWN = 12 -- slower respawn keeps artifacts scarce
-local ACTIVE_PICKUPS = 5  -- how many artifacts exist on a map at once (out of the position pool)
+local DEFAULT_PICKUPS = 6 -- fallback artifact count if a map doesn't specify one
+local DEFAULT_MONSTERS = 4 -- fallback patrol count if a map doesn't specify one
 
 -- State
 local maps = {}             -- [mapId] = { Info, Pickups = {idx=Part}, BaseCF = {idx=CFrame} }
@@ -41,8 +42,14 @@ local function rarityColor(rarity: string): Color3
 	return (info and info.Color) or Color3.fromRGB(255, 255, 255)
 end
 
-local function fireState(player: Player, state: string, artifactName: string?)
-	ExpeditionStateEvent:FireClient(player, { State = state, ArtifactName = artifactName })
+local function fireState(player: Player, state: string, artifactName: string?, extra: { [string]: any }?)
+	local payload = { State = state, ArtifactName = artifactName }
+	if extra then
+		for k, v in pairs(extra) do
+			payload[k] = v
+		end
+	end
+	ExpeditionStateEvent:FireClient(player, payload)
 end
 
 -- =============================================
@@ -73,7 +80,7 @@ local function spawnPickup(mapId: string, index: number)
 	local map = maps[mapId]
 	if not map then return end
 
-	local artifactId, rarity = ArtifactService.RollArtifact()
+	local artifactId, rarity = ArtifactService.RollArtifact(map.Luck)
 	if not artifactId then return end
 	local def = ArtifactData.Artifacts[artifactId]
 	if not def then return end
@@ -211,7 +218,7 @@ function ExpeditionService.Start(player: Player, mapId: string)
 
 	inExpedition[player] = mapId
 	teleportTo(player, map.Info.SpawnCFrame)
-	fireState(player, "Entered")
+	fireState(player, "Entered", nil, { Fog = map.Fog })
 	return true, "Expedition started"
 end
 
@@ -248,10 +255,39 @@ local function doExtract(player: Player)
 	fireState(player, "Extracted", def and def.Name or "artifact")
 end
 
--- When a monster catches a carrier, drop their artifact.
-MonsterService.Caught.Event:Connect(function(player)
-	ExpeditionService.DropCarry(player)
-end)
+-- =============================================
+--  STALK & STEAL: monsters take your carry and flee with it (MonsterService
+--  drives the chase; ExpeditionService owns the carry, so it does the handoff).
+-- =============================================
+
+-- A monster caught a carrier: take the artifact off them and hand it to the thief.
+MonsterService.OnSteal = function(player: Player): (string?, string?)
+	local carry = carrying[player]
+	if not carry then return nil, nil end
+	carrying[player] = nil
+	removeCarry(player)
+	local def = ArtifactData.Artifacts[carry.ArtifactId]
+	fireState(player, "Stolen", def and def.Name or "your artifact")
+	return carry.ArtifactId, carry.Rarity
+end
+
+-- The player tackled the thief: snap the artifact back onto them (the heat's on again).
+MonsterService.OnRecover = function(player: Player, artifactId: string, rarity: string)
+	if not inExpedition[player] or carrying[player] then return end
+	carrying[player] = { ArtifactId = artifactId, Rarity = rarity }
+	ExpeditionService.AttachCarry(player, artifactId, rarity)
+	local def = ArtifactData.Artifacts[artifactId]
+	fireState(player, "Recovered", def and def.Name or "your artifact")
+	MonsterService.StartHunt(player, def and def.DangerLevel or 2)
+end
+
+-- The thief got away: the artifact is lost.
+MonsterService.OnStealEscape = function(player: Player?, artifactId: string)
+	if player and inExpedition[player] then
+		local def = ArtifactData.Artifacts[artifactId]
+		fireState(player, "StealEscaped", def and def.Name or "the artifact")
+	end
+end
 
 -- =============================================
 --  PICKUP SPIN (all maps)
@@ -276,19 +312,23 @@ local function buildMap(def, mapIndex: number)
 	local info = ExpeditionBuilder.Build(origin, def)
 	info.Model.Parent = workspace
 
-	local map = { Info = info, Pickups = {}, BaseCF = {} }
+	-- Per-map tuning (see ExpeditionMaps): how much loot, how rare, how crowded.
+	local pickupCount = def.Pickups or DEFAULT_PICKUPS
+	local monsterCount = def.Monsters or DEFAULT_MONSTERS
+
+	local map = { Info = info, Pickups = {}, BaseCF = {}, Luck = def.Luck or 1, Fog = def.Fog }
 	maps[def.Id] = map
 
 	-- Seed the position pool, then place only a few artifacts at random spots.
 	for index, cf in ipairs(info.SpawnPoints) do
 		map.BaseCF[index] = cf
 	end
-	for _ = 1, ACTIVE_PICKUPS do
+	for _ = 1, math.min(pickupCount, #info.SpawnPoints) do
 		spawnRandomPickup(def.Id)
 	end
 
 	-- Roaming monsters that make just being on the map dangerous.
-	MonsterService.SpawnPatrol(origin, info.HalfX, info.HalfZ, 3, info.Model)
+	MonsterService.SpawnPatrol(origin, info.HalfX, info.HalfZ, monsterCount, info.Model)
 
 	-- Extraction detection (any map's pad extracts whoever is carrying)
 	info.ExtractionZone.Touched:Connect(function(hit)
