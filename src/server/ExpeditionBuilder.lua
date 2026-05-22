@@ -192,6 +192,14 @@ function ExpeditionBuilder.Build(origin: CFrame, theme)
 	-- Themed props that make this map look like its name
 	buildProps(origin, model, theme)
 
+	-- Obstacle crates: cover that blocks sightlines/movement and hides artifacts.
+	local crateColor = Color3.fromRGB(82, 64, 44)
+	for _, spot in ipairs({ { -28, -22 }, { 28, -22 }, { -18, -2 }, { 18, -2 }, { 0, -26 }, { -34, 12 }, { 34, 12 } }) do
+		local cx, cz = spot[1], spot[2]
+		makePart(origin, model, "Crate", Vector3.new(5, 5, 5), Vector3.new(cx, 2.5, cz), crateColor, Enum.Material.WoodPlanks)
+		makePart(origin, model, "Crate", Vector3.new(3, 3, 3), Vector3.new(cx + 3.5, 1.5, cz - 1.5), crateColor, Enum.Material.WoodPlanks)
+	end
+
 	-- Entrance / arrival spawn near the front wall
 	local spawnCFrame = origin * CFrame.new(0, 4, halfZ - 8)
 
@@ -226,15 +234,20 @@ function ExpeditionBuilder.Build(origin: CFrame, theme)
 	exBillboard.Parent = extraction
 	extraction.Parent = model
 
-	-- A FEW scattered artifact spawn points (scarce — you have to search for them)
-	local spawnPoints = {}
-	local cols = { -34, 0, 34 }
-	local rows = { -22, 6 }
-	for _, sx in ipairs(cols) do
-		for _, sz in ipairs(rows) do
-			table.insert(spawnPoints, origin * CFrame.new(sx, 3, sz))
-		end
+	-- A POOL of hidden-ish positions (corners, against walls, behind the crates,
+	-- low to the floor). Only a few are filled at a time — you have to explore.
+	local function sp(x: number, z: number, y: number?)
+		return origin * CFrame.new(x, y or 2.4, z)
 	end
+	local spawnPoints = {
+		sp(-40, -30), sp(40, -30),        -- back corners
+		sp(-40, 14),  sp(40, 14),         -- side-wall nooks near the front
+		sp(-28, -26), sp(28, -26),        -- tucked behind the back crates
+		sp(-18, -6),  sp(18, -6),         -- behind the mid crates
+		sp(0, -31),                       -- against the back wall, center
+		sp(-34, 8),   sp(34, 8),          -- mid side-wall nooks
+		sp(0, -12),                       -- one fairly open
+	}
 
 	return {
 		Model = model,

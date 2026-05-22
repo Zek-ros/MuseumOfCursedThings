@@ -27,6 +27,7 @@ local ExpeditionService = {}
 local EXPEDITION_BASE = Vector3.new(-1000, 0, 0)
 local MAP_SPACING = 220
 local PICKUP_RESPAWN = 12 -- slower respawn keeps artifacts scarce
+local ACTIVE_PICKUPS = 5  -- how many artifacts exist on a map at once (out of the position pool)
 
 -- State
 local maps = {}             -- [mapId] = { Info, Pickups = {idx=Part}, BaseCF = {idx=CFrame} }
@@ -66,6 +67,8 @@ local function makeNameLabel(parent: Instance, text: string, color: Color3, offs
 	return billboard
 end
 
+local spawnRandomPickup -- forward declare (spawnPickup respawns via this)
+
 local function spawnPickup(mapId: string, index: number)
 	local map = maps[mapId]
 	if not map then return end
@@ -79,18 +82,21 @@ local function spawnPickup(mapId: string, index: number)
 	part.Name = "ArtifactPickup"
 	part.Anchored = true
 	part.CanCollide = false
-	part.Size = Vector3.new(2.2, 2.2, 2.2)
+	part.Size = Vector3.new(1.8, 1.8, 1.8)
 	part.Material = Enum.Material.Neon
 	part.Color = rarityColor(rarity)
 	part.CFrame = map.BaseCF[index]
 
+	-- Subtle glow only — no long-range beacon, so you must get close to spot it.
 	local light = Instance.new("PointLight")
 	light.Color = part.Color
-	light.Range = 10
-	light.Brightness = 2
+	light.Range = 5
+	light.Brightness = 1.2
 	light.Parent = part
 
-	makeNameLabel(part, def.Name, part.Color, 2.5)
+	-- Name only legible up close (can't ID artifacts from across the room).
+	local nameTag = makeNameLabel(part, def.Name, part.Color, 2)
+	nameTag.MaxDistance = 14
 
 	local prompt = Instance.new("ProximityPrompt")
 	prompt.ActionText = "Take"
@@ -116,15 +122,28 @@ local function spawnPickup(mapId: string, index: number)
 		-- The artifact attracts monsters while carried — more/faster for scarier ones.
 		MonsterService.StartHunt(triggerPlayer, def.DangerLevel)
 
+		-- Respawn elsewhere (a random free spot) so locations keep shifting.
 		task.delay(PICKUP_RESPAWN, function()
-			if not map.Pickups[index] then
-				spawnPickup(mapId, index)
-			end
+			spawnRandomPickup(mapId)
 		end)
 	end)
 
 	part.Parent = map.Info.Model
 	map.Pickups[index] = part
+end
+
+-- Spawn one pickup at a random unoccupied position in the map's pool.
+spawnRandomPickup = function(mapId: string)
+	local map = maps[mapId]
+	if not map then return end
+	local free = {}
+	for i = 1, #map.BaseCF do
+		if not map.Pickups[i] then
+			table.insert(free, i)
+		end
+	end
+	if #free == 0 then return end
+	spawnPickup(mapId, free[math.random(#free)])
 end
 
 -- =============================================
@@ -260,9 +279,12 @@ local function buildMap(def, mapIndex: number)
 	local map = { Info = info, Pickups = {}, BaseCF = {} }
 	maps[def.Id] = map
 
+	-- Seed the position pool, then place only a few artifacts at random spots.
 	for index, cf in ipairs(info.SpawnPoints) do
 		map.BaseCF[index] = cf
-		spawnPickup(def.Id, index)
+	end
+	for _ = 1, ACTIVE_PICKUPS do
+		spawnRandomPickup(def.Id)
 	end
 
 	-- Roaming monsters that make just being on the map dangerous.
