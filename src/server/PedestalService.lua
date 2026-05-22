@@ -282,4 +282,33 @@ function PedestalService.GetMuseum(player: Player)
 	return museums[player]
 end
 
+-- =============================================
+--  MUSEUM VISITING
+-- =============================================
+function PedestalService.VisitMuseum(player: Player, targetName: string)
+	local target = Players:FindFirstChild(targetName)
+	if not target then return false, "Player not found" end
+	if target == player then return false, "That's your own museum" end
+	local museum = museums[target]
+	if not museum or not museum.Spawn then return false, "Their museum isn't ready yet" end
+	teleportIntoMuseum(player, museum.Spawn)
+	return true, "Visiting " .. targetName .. "'s museum"
+end
+
+function PedestalService.ReturnHome(player: Player)
+	local museum = museums[player]
+	if museum and museum.Spawn then
+		teleportIntoMuseum(player, museum.Spawn)
+	end
+	return true
+end
+
+local PedestalRemotes = ReplicatedStorage:WaitForChild("RemoteFunctions")
+PedestalRemotes:WaitForChild("VisitMuseum").OnServerInvoke = function(player, targetName)
+	return PedestalService.VisitMuseum(player, targetName)
+end
+PedestalRemotes:WaitForChild("ReturnHome").OnServerInvoke = function(player)
+	return PedestalService.ReturnHome(player)
+end
+
 return PedestalService

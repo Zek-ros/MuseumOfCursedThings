@@ -27,6 +27,8 @@ local UpgradeContainmentRF = RemoteFunctions:WaitForChild("UpgradeContainment")
 local StartExpeditionRF = RemoteFunctions:WaitForChild("StartExpedition")
 local UpgradeMuseumRF   = RemoteFunctions:WaitForChild("UpgradeMuseum")
 local GetCollectionRF   = RemoteFunctions:WaitForChild("GetCollection")
+local VisitMuseumRF     = RemoteFunctions:WaitForChild("VisitMuseum")
+local ReturnHomeRF      = RemoteFunctions:WaitForChild("ReturnHome")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Constants = require(Shared:WaitForChild("Constants"))
@@ -194,9 +196,16 @@ local museumButton  = makeActionButton("MuseumButton", "🏛 Expand Museum", THE
 museumButton.TextColor3 = THEME.Text
 local collectionButton = makeActionButton("CollectionButton", "📖 Collection", THEME.PanelLight, 3)
 collectionButton.TextColor3 = THEME.Text
+local visitButton = makeActionButton("VisitButton", "👥 Visit Museums", THEME.PanelLight, 4)
+visitButton.TextColor3 = THEME.Text
+
+-- Shown only while visiting another player's museum
+local returnHomeButton = makeActionButton("ReturnHomeButton", "🏠 Return Home", THEME.Accent, 5)
+returnHomeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+returnHomeButton.Visible = false
 
 -- Shown only while on an expedition
-local leaveButton = makeActionButton("LeaveExpeditionButton", "🏃 Leave Expedition", THEME.Bad, 4)
+local leaveButton = makeActionButton("LeaveExpeditionButton", "🏃 Leave Expedition", THEME.Bad, 6)
 leaveButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 leaveButton.Visible = false
 
@@ -358,6 +367,68 @@ local expListLayout = Instance.new("UIListLayout")
 expListLayout.Padding = UDim.new(0, 10)
 expListLayout.SortOrder = Enum.SortOrder.LayoutOrder
 expListLayout.Parent = expList
+
+-- =============================================
+--  VISIT MUSEUMS PANEL
+-- =============================================
+local visitPanel = Instance.new("Frame")
+visitPanel.Name = "VisitPanel"
+visitPanel.Size = UDim2.new(0, 420, 0, 380)
+visitPanel.Position = UDim2.new(0.5, -210, 0.5, -190)
+visitPanel.BackgroundColor3 = THEME.Panel
+visitPanel.BackgroundTransparency = 0.05
+visitPanel.Visible = false
+visitPanel.Parent = screenGui
+corner(visitPanel, 12)
+
+local visitTitle = Instance.new("TextLabel")
+visitTitle.Size = UDim2.new(1, -60, 0, 44)
+visitTitle.Position = UDim2.new(0, 16, 0, 8)
+visitTitle.BackgroundTransparency = 1
+visitTitle.TextColor3 = THEME.Text
+visitTitle.Font = Enum.Font.GothamBold
+visitTitle.TextSize = 22
+visitTitle.TextXAlignment = Enum.TextXAlignment.Left
+visitTitle.Text = "Visit a Museum"
+visitTitle.Parent = visitPanel
+
+local visitClose = Instance.new("TextButton")
+visitClose.Size = UDim2.new(0, 36, 0, 36)
+visitClose.Position = UDim2.new(1, -44, 0, 10)
+visitClose.BackgroundColor3 = THEME.Bad
+visitClose.TextColor3 = Color3.fromRGB(255, 255, 255)
+visitClose.Font = Enum.Font.GothamBold
+visitClose.TextSize = 20
+visitClose.Text = "✕"
+visitClose.Parent = visitPanel
+corner(visitClose, 8)
+
+local visitEmpty = Instance.new("TextLabel")
+visitEmpty.Size = UDim2.new(1, -32, 0, 40)
+visitEmpty.Position = UDim2.new(0, 16, 0, 60)
+visitEmpty.BackgroundTransparency = 1
+visitEmpty.TextColor3 = Color3.fromRGB(150, 150, 160)
+visitEmpty.Font = Enum.Font.Gotham
+visitEmpty.TextSize = 15
+visitEmpty.TextWrapped = true
+visitEmpty.Text = "No one else is online right now. Invite a friend to tour your cursed museum!"
+visitEmpty.Visible = false
+visitEmpty.Parent = visitPanel
+
+local visitScroll = Instance.new("ScrollingFrame")
+visitScroll.Size = UDim2.new(1, -24, 1, -64)
+visitScroll.Position = UDim2.new(0, 12, 0, 56)
+visitScroll.BackgroundTransparency = 1
+visitScroll.BorderSizePixel = 0
+visitScroll.ScrollBarThickness = 6
+visitScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+visitScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+visitScroll.Parent = visitPanel
+
+local visitLayout = Instance.new("UIListLayout")
+visitLayout.Padding = UDim.new(0, 8)
+visitLayout.SortOrder = Enum.SortOrder.LayoutOrder
+visitLayout.Parent = visitScroll
 
 -- =============================================
 --  FLOATING TEXT + BANNER HELPERS
@@ -727,6 +798,60 @@ end)
 
 expClose.Activated:Connect(function()
 	expeditionPanel.Visible = false
+end)
+
+-- ===== Visit museums =====
+local function refreshVisitList()
+	for _, child in ipairs(visitScroll:GetChildren()) do
+		if child:IsA("TextButton") then child:Destroy() end
+	end
+
+	local others = {}
+	for _, other in ipairs(Players:GetPlayers()) do
+		if other ~= player then table.insert(others, other) end
+	end
+	visitEmpty.Visible = (#others == 0)
+
+	for i, other in ipairs(others) do
+		local btn = Instance.new("TextButton")
+		btn.Size = UDim2.new(1, 0, 0, 48)
+		btn.LayoutOrder = i
+		btn.BackgroundColor3 = THEME.PanelLight
+		btn.TextColor3 = THEME.Text
+		btn.Font = Enum.Font.GothamBold
+		btn.TextSize = 16
+		btn.Text = "👥 " .. other.DisplayName .. "'s Museum"
+		corner(btn, 8)
+		btn.Activated:Connect(function()
+			local ok, msg = VisitMuseumRF:InvokeServer(other.Name)
+			if ok then
+				returnHomeButton.Visible = true
+				visitPanel.Visible = false
+				showBanner(msg or ("Visiting " .. other.DisplayName), Color3.fromRGB(30, 30, 50), THEME.Good, 2.5)
+			elseif msg then
+				showBanner(msg, THEME.Bad, Color3.fromRGB(255, 255, 255), 2)
+			end
+		end)
+		btn.Parent = visitScroll
+	end
+end
+
+visitButton.Activated:Connect(function()
+	inventoryPanel.Visible = false
+	collectionPanel.Visible = false
+	expeditionPanel.Visible = false
+	visitPanel.Visible = not visitPanel.Visible
+	if visitPanel.Visible then refreshVisitList() end
+end)
+
+visitClose.Activated:Connect(function()
+	visitPanel.Visible = false
+end)
+
+returnHomeButton.Activated:Connect(function()
+	ReturnHomeRF:InvokeServer()
+	returnHomeButton.Visible = false
+	showBanner("Back in your own museum.", THEME.PanelLight, THEME.Text, 2)
 end)
 
 leaveButton.Activated:Connect(function()

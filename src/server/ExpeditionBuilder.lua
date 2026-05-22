@@ -33,6 +33,112 @@ local function makePart(origin, parent, name, size, localPos, color, material)
 	return part
 end
 
+-- Like makePart but takes a full local CFrame (so props can be rotated).
+local function makePartCF(origin, parent, name, size, cframeLocal, color, material)
+	local part = Instance.new("Part")
+	part.Name = name
+	part.Anchored = true
+	part.Size = size
+	part.CFrame = origin * cframeLocal
+	part.Color = color
+	part.Material = material
+	part.TopSurface = Enum.SurfaceType.Smooth
+	part.BottomSurface = Enum.SurfaceType.Smooth
+	part.Parent = parent
+	return part
+end
+
+-- =============================================
+--  THEMED PROPS — make each map read as a distinct place.
+--  (Procedural for now; swap for real models via ModelFactory later.)
+-- =============================================
+local function schoolProps(origin, model)
+	-- Cracked chalkboard on the back wall
+	makePart(origin, model, "Chalkboard", Vector3.new(26, 9, 0.4),
+		Vector3.new(0, 8, -34.6), Color3.fromRGB(24, 60, 42), Enum.Material.SmoothPlastic)
+	-- Rows of desks
+	for _, dx in ipairs({ -30, -18, -6, 6, 18, 30 }) do
+		for _, dz in ipairs({ -24, -12 }) do
+			makePart(origin, model, "Desk", Vector3.new(3, 2, 2),
+				Vector3.new(dx, 1, dz), Color3.fromRGB(95, 62, 40), Enum.Material.Wood)
+		end
+	end
+	-- Lockers down both side walls
+	for _, lz in ipairs({ -22, -10, 2, 14 }) do
+		makePart(origin, model, "Locker", Vector3.new(2, 9, 4),
+			Vector3.new(-43.5, 4.5, lz), Color3.fromRGB(80, 92, 112), Enum.Material.Metal)
+		makePart(origin, model, "Locker", Vector3.new(2, 9, 4),
+			Vector3.new(43.5, 4.5, lz), Color3.fromRGB(80, 92, 112), Enum.Material.Metal)
+	end
+end
+
+local function labProps(origin, model)
+	-- Glowing containment pods along the back
+	for _, px in ipairs({ -28, -14, 0, 14, 28 }) do
+		local pod = makePartCF(origin, model, "ContainmentPod", Vector3.new(7, 4, 4),
+			CFrame.new(px, 3.5, -28) * CFrame.Angles(0, 0, math.rad(90)),
+			Color3.fromRGB(90, 180, 220), Enum.Material.Neon)
+		pod.Shape = Enum.PartType.Cylinder
+		pod.Transparency = 0.45
+		local glow = Instance.new("PointLight")
+		glow.Color = Color3.fromRGB(90, 180, 220)
+		glow.Range = 12
+		glow.Brightness = 2
+		glow.Parent = pod
+	end
+	-- Steel lab tables
+	for _, tx in ipairs({ -24, -8, 8, 24 }) do
+		makePart(origin, model, "LabTable", Vector3.new(8, 3, 3),
+			Vector3.new(tx, 1.5, -6), Color3.fromRGB(120, 128, 135), Enum.Material.Metal)
+	end
+	-- Caution stripe on the floor
+	makePart(origin, model, "Caution", Vector3.new(60, 0.12, 2),
+		Vector3.new(0, 0.07, 14), Color3.fromRGB(220, 200, 40), Enum.Material.SmoothPlastic)
+end
+
+local function mallProps(origin, model)
+	local storeColors = {
+		Color3.fromRGB(200, 80, 90),
+		Color3.fromRGB(80, 160, 200),
+		Color3.fromRGB(200, 180, 80),
+		Color3.fromRGB(150, 100, 200),
+	}
+	local i = 0
+	for _, sz in ipairs({ -22, -6, 10 }) do
+		i += 1
+		makePart(origin, model, "Storefront", Vector3.new(1.2, 10, 12),
+			Vector3.new(-43.4, 5, sz), storeColors[((i - 1) % #storeColors) + 1], Enum.Material.SmoothPlastic)
+		makePart(origin, model, "Storefront", Vector3.new(1.2, 10, 12),
+			Vector3.new(43.4, 5, sz), storeColors[(i % #storeColors) + 1], Enum.Material.SmoothPlastic)
+	end
+	-- Dry fountain in the middle
+	local basin = makePartCF(origin, model, "Fountain", Vector3.new(2, 12, 12),
+		CFrame.new(0, 1, -6) * CFrame.Angles(0, 0, math.rad(90)),
+		Color3.fromRGB(120, 120, 130), Enum.Material.Marble)
+	basin.Shape = Enum.PartType.Cylinder
+	-- Planters
+	for _, px in ipairs({ -20, 20 }) do
+		makePart(origin, model, "Planter", Vector3.new(4, 2, 4),
+			Vector3.new(px, 1, -22), Color3.fromRGB(90, 70, 55), Enum.Material.Wood)
+	end
+end
+
+local PROP_BUILDERS = {
+	school = schoolProps,
+	lab = labProps,
+	mall = mallProps,
+}
+
+local function buildProps(origin, model, theme)
+	local fn = PROP_BUILDERS[theme.Theme]
+	if fn then
+		local ok, err = pcall(fn, origin, model)
+		if not ok then
+			warn("[ExpeditionBuilder] props for " .. tostring(theme.Theme) .. " failed: " .. tostring(err))
+		end
+	end
+end
+
 --- Build the expedition map at the given origin (center of floor top).
 -- `theme` supplies Floor/Wall/Pillar/Light colors (see ExpeditionMaps).
 -- Returns { Model, SpawnCFrame, ExtractionZone, SpawnPoints = {CFrame...} }.
@@ -78,6 +184,9 @@ function ExpeditionBuilder.Build(origin: CFrame, theme)
 			light.Parent = fixture
 		end
 	end
+
+	-- Themed props that make this map look like its name
+	buildProps(origin, model, theme)
 
 	-- Entrance / arrival spawn near the front wall
 	local spawnCFrame = origin * CFrame.new(0, 4, halfZ - 8)

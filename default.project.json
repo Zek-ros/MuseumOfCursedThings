@@ -70,6 +70,9 @@
 				},
 				"ExpeditionMaps": {
 					"$path": "src/shared/ExpeditionMaps.lua"
+				},
+				"SoundData": {
+					"$path": "src/shared/SoundData.lua"
 				}
 			},
 			"RemoteEvents": {
@@ -130,6 +133,12 @@
 				},
 				"CompleteTutorial": {
 					"$className": "RemoteFunction"
+				},
+				"VisitMuseum": {
+					"$className": "RemoteFunction"
+				},
+				"ReturnHome": {
+					"$className": "RemoteFunction"
 				}
 			}
 		},
@@ -143,6 +152,9 @@
 				},
 				"Onboarding": {
 					"$path": "src/client/Onboarding.client.lua"
+				},
+				"Audio": {
+					"$path": "src/client/Audio.client.lua"
 				}
 			}
 		}
