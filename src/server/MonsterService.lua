@@ -26,14 +26,24 @@ local CATCH_RADIUS    = 6
 local SPAWN_DISTANCE  = 34
 local PATROL_SPEED    = 6    -- wandering (a slow stalk)
 local PATROL_CHASE    = 9    -- chasing (player walks 16 — always escapable)
-local AGGRO_RANGE     = 36   -- patrol notices you within this
+local AGGRO_RANGE     = 20   -- patrol notices you within this — AND only with line of sight
+local AGGRO_MEMORY    = 3    -- keeps chasing your last-seen spot this long after losing sight
+local LOS_RECHECK     = 0.2  -- seconds between line-of-sight raycasts per monster
 local HUNT_SPEED_BASE = 10
 local HUNT_SPEED_MAX  = 14
 local CATCH_COOLDOWN  = 2
 
-local THIEF_SPEED       = 13 -- flees fast, but a running player (16) can catch up
+-- All monsters live under one folder so line-of-sight rays can ignore them
+-- (they shouldn't block each other or count as cover).
+local monstersFolder = Instance.new("Folder")
+monstersFolder.Name = "ExpeditionMonsters"
+monstersFolder.Parent = workspace
+
+local THIEF_SPEED       = 14 -- flees fast, but a running player (16) slowly catches up
 local THIEF_RECOVER     = 7  -- tackle the thief within this to wrench the loot back
 local THIEF_ESCAPE_TIME = 18 -- after this long it gets away and the loot is lost
+local THIEF_HEAD_START  = 14 -- studs it darts away the instant it grabs your loot
+local STEAL_GRACE       = 1.5 -- you can't recover for this long — it gets a moment to bolt
 
 -- Callbacks set by ExpeditionService (it owns carry/artifact state):
 --   OnSteal(player) -> artifactId?, rarity?   (remove + return their carry)
@@ -69,16 +79,38 @@ local function makeMonster(): Model
 	end)
 end
 
--- Move a monster horizontally toward `targetPos`; returns horizontal distance.
-local function chaseStep(monster: Model, targetPos: Vector3, speed: number, dt: number): number
+-- Shared ray params for all monster raycasts: ignore other monsters/thieves so
+-- they neither block movement nor block line of sight.
+local monsterRayParams = RaycastParams.new()
+monsterRayParams.FilterType = Enum.RaycastFilterType.Exclude
+monsterRayParams.FilterDescendantsInstances = { monstersFolder }
+
+local STEP_BUFFER = 2.5 -- keep monsters this far off walls so they don't clip in
+
+-- Is there solid geometry (a maze wall, crate, etc.) within `dist` ahead?
+local function wallAhead(fromPos: Vector3, dir: Vector3, dist: number): boolean
+	return workspace:Raycast(fromPos, dir * (dist + STEP_BUFFER), monsterRayParams) ~= nil
+end
+
+-- Move a monster horizontally toward `targetPos`, but NEVER through a wall.
+-- Returns (distanceToTarget, didMove) — didMove is false when blocked by a wall.
+local function chaseStep(monster: Model, targetPos: Vector3, speed: number, dt: number): (number, boolean)
 	local cur = monster:GetPivot().Position
 	local flat = Vector3.new(targetPos.X - cur.X, 0, targetPos.Z - cur.Z)
 	local dist = flat.Magnitude
-	if dist > 0.1 then
-		local newPos = cur + flat.Unit * math.min(speed * dt, dist)
-		ModelFactory.Place(monster, CFrame.lookAt(newPos, newPos + flat.Unit))
+	if dist <= 0.1 then
+		return dist, false
 	end
-	return dist
+	local dir = flat.Unit
+	local step = math.min(speed * dt, dist)
+	if wallAhead(cur, dir, step) then
+		-- Blocked: hold position (just turn to face the target) — no phasing.
+		ModelFactory.Place(monster, CFrame.lookAt(cur, cur + dir))
+		return dist, false
+	end
+	local newPos = cur + dir * step
+	ModelFactory.Place(monster, CFrame.lookAt(newPos, newPos + dir))
+	return dist, true
 end
 
 local function flatDist(a: Vector3, b: Vector3): number
@@ -93,7 +125,9 @@ local function clampToBounds(pos: Vector3, center: Vector3, hx: number, hz: numb
 end
 
 local function randomPoint(center: Vector3, hx: number, hz: number): Vector3
-	return center + Vector3.new((math.random() * 2 - 1) * (hx - 8), 0, (math.random() * 2 - 1) * (hz - 8))
+	-- y = 2.5 so the figure stands ON the floor and movement rays cast at chest
+	-- height (clear of the floor below and ceiling above).
+	return center + Vector3.new((math.random() * 2 - 1) * (hx - 8), 2.5, (math.random() * 2 - 1) * (hz - 8))
 end
 
 -- Which registered map region contains this position (for bounding a thief).
@@ -125,10 +159,21 @@ local function nearestPlayerInRegion(center: Vector3, hx: number, hz: number, fr
 	return best, bestPos, bestDist
 end
 
+-- True if nothing solid is between the monster and the player (maze walls and
+-- crates block sight; other monsters don't). This is what lets you sneak past
+-- in the dark instead of being tracked through walls.
+local function hasLineOfSight(fromPos: Vector3, playerChar: Model, toPos: Vector3): boolean
+	local result = workspace:Raycast(fromPos, toPos - fromPos, monsterRayParams)
+	if not result then
+		return true -- reached the player with nothing in the way
+	end
+	return result.Instance:IsDescendantOf(playerChar) -- hit the player first, not a wall
+end
+
 -- =============================================
 --  THIEVES (flee with stolen loot)
 -- =============================================
-local function spawnThief(victim: Player, pos: Vector3, artifactId: string, rarity: string, region)
+local function spawnThief(victim: Player, pos: Vector3, victimPos: Vector3, artifactId: string, rarity: string, region)
 	if not region then
 		-- Nowhere to bound a thief; treat as an immediate escape so the loot is
 		-- not silently swallowed.
@@ -138,8 +183,18 @@ local function spawnThief(victim: Player, pos: Vector3, artifactId: string, rari
 		return
 	end
 
+	-- Dart away from the victim the instant it grabs the loot, so it isn't
+	-- standing on top of you to be re-grabbed for free.
+	local away = Vector3.new(pos.X - victimPos.X, 0, pos.Z - victimPos.Z)
+	if away.Magnitude < 1 then
+		local angle = math.random() * math.pi * 2
+		away = Vector3.new(math.cos(angle), 0, math.sin(angle))
+	end
+	away = away.Unit
+	local spawnPos = clampToBounds(pos + away * THIEF_HEAD_START, region.Center, region.HalfX, region.HalfZ)
+
 	local monster = makeMonster()
-	ModelFactory.Place(monster, CFrame.new(pos))
+	ModelFactory.Place(monster, CFrame.new(spawnPos))
 
 	-- A glowing loot orb so you can spot (and chase) the thief in the dark.
 	local orb = Instance.new("Part")
@@ -157,11 +212,11 @@ local function spawnThief(victim: Player, pos: Vector3, artifactId: string, rari
 	orbLight.Parent = orb
 	orb.Parent = monster
 
-	monster.Parent = workspace
+	monster.Parent = monstersFolder
 	table.insert(thieves, {
 		Model = monster, ArtifactId = artifactId, Rarity = rarity,
 		Center = region.Center, HalfX = region.HalfX, HalfZ = region.HalfZ,
-		Born = os.clock(), Victim = victim,
+		Born = os.clock(), RecoverableAt = os.clock() + STEAL_GRACE, Victim = victim,
 	})
 end
 
@@ -183,10 +238,12 @@ local function catchPlayer(player: Player, monster: Model?, region)
 
 	-- They had loot: end the converging hunt, let a thief flee with it.
 	MonsterService.StopHunt(player)
-	local pos = (monster and monster:GetPivot().Position)
-		or (player.Character and player.Character:GetPivot().Position)
-	region = region or (pos and regionFor(pos))
-	spawnThief(player, pos or Vector3.new(), artifactId, rarity, region)
+	local char = player.Character
+	local hrp = char and char:FindFirstChild("HumanoidRootPart")
+	local victimPos = (hrp and hrp.Position) or (monster and monster:GetPivot().Position) or Vector3.new()
+	local pos = (monster and monster:GetPivot().Position) or victimPos
+	region = region or regionFor(pos)
+	spawnThief(player, pos, victimPos, artifactId, rarity, region)
 end
 
 -- =============================================
@@ -209,7 +266,7 @@ function MonsterService.StartHunt(player: Player, danger: number?)
 		local offset = Vector3.new(math.cos(angle), 0, math.sin(angle)) * SPAWN_DISTANCE
 		local monster = makeMonster()
 		ModelFactory.Place(monster, CFrame.new(hrp.Position + offset))
-		monster.Parent = workspace
+		monster.Parent = monstersFolder
 		table.insert(hunt.Monsters, monster)
 	end
 end
@@ -227,15 +284,18 @@ end
 --  PATROLS (always roaming each map)
 -- =============================================
 --- Spawn `count` roaming monsters bound to a map region.
-function MonsterService.SpawnPatrol(origin: CFrame, halfX: number, halfZ: number, count: number, parent: Instance)
+function MonsterService.SpawnPatrol(origin: CFrame, halfX: number, halfZ: number, count: number)
 	local center = origin.Position
 	table.insert(mapRegions, { Center = center, HalfX = halfX, HalfZ = halfZ })
 	for _ = 1, count do
 		local monster = makeMonster()
-		local entry = { Model = monster, Center = center, HalfX = halfX, HalfZ = halfZ }
+		local entry = {
+			Model = monster, Center = center, HalfX = halfX, HalfZ = halfZ,
+			AggroUntil = 0, NextLos = 0, LastSeen = nil,
+		}
 		entry.Target = randomPoint(center, halfX, halfZ)
 		ModelFactory.Place(monster, CFrame.new(entry.Target))
-		monster.Parent = parent or workspace
+		monster.Parent = monstersFolder
 		table.insert(patrols, entry)
 	end
 end
@@ -252,7 +312,7 @@ RunService.Heartbeat:Connect(function(dt)
 			for _, monster in ipairs(hunt.Monsters) do
 				if monster.Parent then
 					local dist = chaseStep(monster, hrp.Position, hunt.Speed, dt)
-					if dist <= CATCH_RADIUS then
+					if dist <= CATCH_RADIUS and hasLineOfSight(monster:GetPivot().Position, char, hrp.Position) then
 						catchPlayer(player, monster, regionFor(hrp.Position))
 					end
 				end
@@ -260,25 +320,37 @@ RunService.Heartbeat:Connect(function(dt)
 		end
 	end
 
-	-- Patrols roam, and chase anyone who strays too close
+	-- Patrols roam, and chase only players they can actually SEE nearby. Once a
+	-- player breaks line of sight they keep heading to the last-seen spot for a
+	-- few seconds, then give up — so you can lose them around corners.
+	local now = os.clock()
 	for _, p in ipairs(patrols) do
 		if p.Model.Parent then
-			local targetPlayer, targetPos = nearestPlayerInRegion(p.Center, p.HalfX, p.HalfZ, p.Model:GetPivot().Position)
-			if targetPlayer and targetPos then
-				local d = flatDist(targetPos, p.Model:GetPivot().Position)
-				if d <= AGGRO_RANGE then
-					if d <= CATCH_RADIUS then
-						catchPlayer(targetPlayer, p.Model, { Center = p.Center, HalfX = p.HalfX, HalfZ = p.HalfZ })
-					else
-						chaseStep(p.Model, targetPos, PATROL_CHASE, dt)
-					end
-					continue
+			local mpos = p.Model:GetPivot().Position
+			local seenPlayer, seenPos = nearestPlayerInRegion(p.Center, p.HalfX, p.HalfZ, mpos)
+			local d = seenPos and flatDist(seenPos, mpos) or math.huge
+
+			-- Detect: close enough AND a clear line of sight (raycast, throttled).
+			if seenPlayer and d <= AGGRO_RANGE and now >= p.NextLos then
+				p.NextLos = now + LOS_RECHECK
+				if hasLineOfSight(mpos, seenPlayer.Character, seenPos) then
+					p.AggroUntil = now + AGGRO_MEMORY
+					p.LastSeen = seenPos
 				end
 			end
-			-- Wander
-			local dist = chaseStep(p.Model, p.Target, PATROL_SPEED, dt)
-			if dist < 3 then
-				p.Target = randomPoint(p.Center, p.HalfX, p.HalfZ)
+
+			if now < p.AggroUntil then
+				if seenPlayer and d <= CATCH_RADIUS and hasLineOfSight(mpos, seenPlayer.Character, seenPos) then
+					catchPlayer(seenPlayer, p.Model, { Center = p.Center, HalfX = p.HalfX, HalfZ = p.HalfZ })
+				else
+					chaseStep(p.Model, p.LastSeen or mpos, PATROL_CHASE, dt)
+				end
+			else
+				-- Wander; pick a new target on arrival OR when a wall blocks us.
+				local dist, moved = chaseStep(p.Model, p.Target, PATROL_SPEED, dt)
+				if dist < 3 or not moved then
+					p.Target = randomPoint(p.Center, p.HalfX, p.HalfZ)
+				end
 			end
 		end
 	end
@@ -295,7 +367,7 @@ RunService.Heartbeat:Connect(function(dt)
 
 			if npos then
 				local d = flatDist(npos, tpos)
-				if d <= THIEF_RECOVER then
+				if d <= THIEF_RECOVER and os.clock() >= t.RecoverableAt then
 					-- Tackled: give the loot back to whoever caught it.
 					if MonsterService.OnRecover and np then
 						MonsterService.OnRecover(np, t.ArtifactId, t.Rarity)
@@ -308,13 +380,22 @@ RunService.Heartbeat:Connect(function(dt)
 					local away = Vector3.new(tpos.X - npos.X, 0, tpos.Z - npos.Z)
 					away = away.Magnitude > 0.1 and away.Unit or Vector3.new(1, 0, 0)
 					local goal = clampToBounds(tpos + away * 12, t.Center, t.HalfX, t.HalfZ)
-					chaseStep(t.Model, goal, THIEF_SPEED, dt)
+					local _, moved = chaseStep(t.Model, goal, THIEF_SPEED, dt)
+					if not moved then
+						-- Cornered against a wall: slip sideways along it instead.
+						local side = Vector3.new(-away.Z, 0, away.X)
+						if math.random() < 0.5 then
+							side = -side
+						end
+						local sideGoal = clampToBounds(tpos + side * 12, t.Center, t.HalfX, t.HalfZ)
+						chaseStep(t.Model, sideGoal, THIEF_SPEED, dt)
+					end
 				end
 			else
 				-- No one nearby: drift around so it doesn't just stand still.
 				t.Target = t.Target or randomPoint(t.Center, t.HalfX, t.HalfZ)
-				local d = chaseStep(t.Model, t.Target, PATROL_SPEED, dt)
-				if d < 3 then
+				local d, moved = chaseStep(t.Model, t.Target, PATROL_SPEED, dt)
+				if d < 3 or not moved then
 					t.Target = randomPoint(t.Center, t.HalfX, t.HalfZ)
 				end
 			end

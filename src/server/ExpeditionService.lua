@@ -328,7 +328,7 @@ local function buildMap(def, mapIndex: number)
 	end
 
 	-- Roaming monsters that make just being on the map dangerous.
-	MonsterService.SpawnPatrol(origin, info.HalfX, info.HalfZ, monsterCount, info.Model)
+	MonsterService.SpawnPatrol(origin, info.HalfX, info.HalfZ, monsterCount)
 
 	-- Extraction detection (any map's pad extracts whoever is carrying)
 	info.ExtractionZone.Touched:Connect(function(hit)
