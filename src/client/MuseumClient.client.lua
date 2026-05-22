@@ -18,17 +18,22 @@ local OpenInventoryEvent  = RemoteEvents:WaitForChild("OpenInventory")
 local MuseumChangedEvent  = RemoteEvents:WaitForChild("MuseumChanged")
 local LeaveExpeditionEvent = RemoteEvents:WaitForChild("LeaveExpedition")
 local ExpeditionStateEvent = RemoteEvents:WaitForChild("ExpeditionState")
+local QueueStateEvent      = RemoteEvents:WaitForChild("QueueState")
+local OpenQueueEvent       = RemoteEvents:WaitForChild("OpenQueue")
+local LeaveQueueEvent      = RemoteEvents:WaitForChild("LeaveExpeditionQueue")
+local LaunchQueueEvent     = RemoteEvents:WaitForChild("LaunchExpeditionQueue")
 
 local RemoteFunctions  = ReplicatedStorage:WaitForChild("RemoteFunctions")
 local GetInventoryRF   = RemoteFunctions:WaitForChild("GetInventory")
 local DisplayRF        = RemoteFunctions:WaitForChild("DisplayArtifact")
 local UndisplayRF      = RemoteFunctions:WaitForChild("UndisplayArtifact")
 local UpgradeContainmentRF = RemoteFunctions:WaitForChild("UpgradeContainment")
-local StartExpeditionRF = RemoteFunctions:WaitForChild("StartExpedition")
 local UpgradeMuseumRF   = RemoteFunctions:WaitForChild("UpgradeMuseum")
 local GetCollectionRF   = RemoteFunctions:WaitForChild("GetCollection")
 local VisitMuseumRF     = RemoteFunctions:WaitForChild("VisitMuseum")
 local ReturnHomeRF      = RemoteFunctions:WaitForChild("ReturnHome")
+local GoToHubRF         = RemoteFunctions:WaitForChild("GoToHub")
+local JoinQueueRF       = RemoteFunctions:WaitForChild("JoinExpeditionQueue")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Constants = require(Shared:WaitForChild("Constants"))
@@ -199,15 +204,28 @@ collectionButton.TextColor3 = THEME.Text
 local visitButton = makeActionButton("VisitButton", "👥 Visit Museums", THEME.PanelLight, 4)
 visitButton.TextColor3 = THEME.Text
 
--- Shown only while visiting another player's museum
-local returnHomeButton = makeActionButton("ReturnHomeButton", "🏠 Return Home", THEME.Accent, 5)
-returnHomeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-returnHomeButton.Visible = false
-
 -- Shown only while on an expedition
-local leaveButton = makeActionButton("LeaveExpeditionButton", "🏃 Leave Expedition", THEME.Bad, 6)
+local leaveButton = makeActionButton("LeaveExpeditionButton", "🏃 Leave Expedition", THEME.Bad, 5)
 leaveButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 leaveButton.Visible = false
+
+-- Top-left navigation between the hub and your museum
+local function makeNavButton(name: string, text: string, order: number)
+	local btn = Instance.new("TextButton")
+	btn.Name = name
+	btn.Size = UDim2.new(0, 150, 0, 34)
+	btn.Position = UDim2.new(0, 16, 0, 16 + order * 40)
+	btn.BackgroundColor3 = THEME.PanelLight
+	btn.TextColor3 = THEME.Text
+	btn.Font = Enum.Font.GothamBold
+	btn.TextSize = 14
+	btn.Text = text
+	btn.Parent = screenGui
+	corner(btn, 8)
+	return btn
+end
+local hubButton = makeNavButton("HubButton", "🌐 Hub", 0)
+local myMuseumButton = makeNavButton("MyMuseumButton", "🏛 My Museum", 1)
 
 -- =============================================
 --  INVENTORY PANEL
@@ -429,6 +447,62 @@ local visitLayout = Instance.new("UIListLayout")
 visitLayout.Padding = UDim.new(0, 8)
 visitLayout.SortOrder = Enum.SortOrder.LayoutOrder
 visitLayout.Parent = visitScroll
+
+-- =============================================
+--  EXPEDITION QUEUE PANEL
+-- =============================================
+local queuePanel = Instance.new("Frame")
+queuePanel.Name = "QueuePanel"
+queuePanel.Size = UDim2.new(0, 360, 0, 200)
+queuePanel.Position = UDim2.new(0.5, -180, 0.5, -100)
+queuePanel.BackgroundColor3 = THEME.Panel
+queuePanel.BackgroundTransparency = 0.05
+queuePanel.Visible = false
+queuePanel.Parent = screenGui
+corner(queuePanel, 12)
+
+local queueTitle = Instance.new("TextLabel")
+queueTitle.Size = UDim2.new(1, -24, 0, 30)
+queueTitle.Position = UDim2.new(0, 12, 0, 12)
+queueTitle.BackgroundTransparency = 1
+queueTitle.TextColor3 = THEME.Accent
+queueTitle.Font = Enum.Font.GothamBold
+queueTitle.TextSize = 20
+queueTitle.Text = "Queued for Expedition"
+queueTitle.Parent = queuePanel
+
+local queueInfo = Instance.new("TextLabel")
+queueInfo.Size = UDim2.new(1, -24, 0, 60)
+queueInfo.Position = UDim2.new(0, 12, 0, 46)
+queueInfo.BackgroundTransparency = 1
+queueInfo.TextColor3 = THEME.Text
+queueInfo.Font = Enum.Font.Gotham
+queueInfo.TextSize = 16
+queueInfo.TextWrapped = true
+queueInfo.Text = ""
+queueInfo.Parent = queuePanel
+
+local launchNowBtn = Instance.new("TextButton")
+launchNowBtn.Size = UDim2.new(0.5, -18, 0, 40)
+launchNowBtn.Position = UDim2.new(0, 12, 1, -52)
+launchNowBtn.BackgroundColor3 = THEME.Good
+launchNowBtn.TextColor3 = Color3.fromRGB(20, 30, 20)
+launchNowBtn.Font = Enum.Font.GothamBold
+launchNowBtn.TextSize = 16
+launchNowBtn.Text = "🔦 Launch Now"
+launchNowBtn.Parent = queuePanel
+corner(launchNowBtn, 8)
+
+local leaveQueueBtn = Instance.new("TextButton")
+leaveQueueBtn.Size = UDim2.new(0.5, -18, 0, 40)
+leaveQueueBtn.Position = UDim2.new(0.5, 6, 1, -52)
+leaveQueueBtn.BackgroundColor3 = THEME.Bad
+leaveQueueBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+leaveQueueBtn.Font = Enum.Font.GothamBold
+leaveQueueBtn.TextSize = 16
+leaveQueueBtn.Text = "Leave Queue"
+leaveQueueBtn.Parent = queuePanel
+corner(leaveQueueBtn, 8)
 
 -- =============================================
 --  FLOATING TEXT + BANNER HELPERS
@@ -778,11 +852,12 @@ for i, map in ipairs(ExpeditionMaps) do
 		if expeditionBusy then return end
 		expeditionBusy = true
 		expeditionPanel.Visible = false
-		local ok, msg = StartExpeditionRF:InvokeServer(map.Id)
+		-- Join the queue for this map; the queue panel takes over from here.
+		local ok, msg = JoinQueueRF:InvokeServer(map.Id)
 		if not ok and msg then
 			showBanner(msg, THEME.PanelLight, THEME.Text, 2)
 		end
-		task.wait(1)
+		task.wait(0.5)
 		expeditionBusy = false
 	end)
 
@@ -825,9 +900,9 @@ local function refreshVisitList()
 		btn.Activated:Connect(function()
 			local ok, msg = VisitMuseumRF:InvokeServer(other.Name)
 			if ok then
-				returnHomeButton.Visible = true
 				visitPanel.Visible = false
-				showBanner(msg or ("Visiting " .. other.DisplayName), Color3.fromRGB(30, 30, 50), THEME.Good, 2.5)
+				showBanner((msg or ("Visiting " .. other.DisplayName)) .. "  (use 🏛 My Museum to return)",
+					Color3.fromRGB(30, 30, 50), THEME.Good, 3)
 			elseif msg then
 				showBanner(msg, THEME.Bad, Color3.fromRGB(255, 255, 255), 2)
 			end
@@ -848,10 +923,43 @@ visitClose.Activated:Connect(function()
 	visitPanel.Visible = false
 end)
 
-returnHomeButton.Activated:Connect(function()
+-- ===== Hub / museum navigation =====
+hubButton.Activated:Connect(function()
+	GoToHubRF:InvokeServer()
+end)
+
+myMuseumButton.Activated:Connect(function()
 	ReturnHomeRF:InvokeServer()
-	returnHomeButton.Visible = false
-	showBanner("Back in your own museum.", THEME.PanelLight, THEME.Text, 2)
+end)
+
+-- ===== Expedition queue =====
+launchNowBtn.Activated:Connect(function()
+	LaunchQueueEvent:FireServer()
+end)
+
+leaveQueueBtn.Activated:Connect(function()
+	LeaveQueueEvent:FireServer()
+	queuePanel.Visible = false
+end)
+
+QueueStateEvent.OnClientEvent:Connect(function(info)
+	if info.InQueue then
+		queuePanel.Visible = true
+		queueTitle.Text = "Queued: " .. (info.MapName or "Expedition")
+		queueInfo.Text = string.format(
+			"%d player%s queued.\nLaunching in %d seconds — or press Launch Now.",
+			info.Count or 1, (info.Count == 1) and "" or "s", info.SecondsLeft or 0)
+	else
+		queuePanel.Visible = false
+	end
+end)
+
+-- Hub queue pad asks us to open the map chooser
+OpenQueueEvent.OnClientEvent:Connect(function()
+	inventoryPanel.Visible = false
+	collectionPanel.Visible = false
+	visitPanel.Visible = false
+	expeditionPanel.Visible = true
 end)
 
 leaveButton.Activated:Connect(function()
@@ -864,6 +972,7 @@ ExpeditionStateEvent.OnClientEvent:Connect(function(info)
 	if state == "Entered" then
 		expeditionButton.Visible = false
 		leaveButton.Visible = true
+		queuePanel.Visible = false -- the queue launched
 		showBanner("Find a cursed artifact and carry it to the green EXTRACTION pad!",
 			Color3.fromRGB(20, 40, 30), Color3.fromRGB(160, 255, 200), 4)
 	elseif state == "Carrying" then

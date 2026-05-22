@@ -120,7 +120,9 @@ function MuseumBuilder.Build(origin: CFrame, ownerName: string)
 	spawn.Color = Color3.fromRGB(70, 120, 90)
 	spawn.Material = Enum.Material.SmoothPlastic
 	spawn.Neutral = true
-	spawn.Enabled = true
+	-- Disabled as an auto-spawn: players spawn in the hub and teleport here.
+	-- We still use this part's CFrame as the museum teleport target.
+	spawn.Enabled = false
 	spawn.Duration = 0
 	spawn.Parent = model
 

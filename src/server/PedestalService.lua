@@ -215,9 +215,8 @@ local function setupMuseum(player: Player)
 		attachPrompt(player, pedestal)
 	end
 
-	-- Respawn here from now on, and move them in right away
-	player.RespawnLocation = built.Spawn
-	teleportIntoMuseum(player, built.Spawn)
+	-- Note: spawning is owned by HubService now (players spawn in the hub and
+	-- reach their museum via the hub pad / "My Museum" button). We just build it.
 
 	refreshPlayer(player)
 end

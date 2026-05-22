@@ -53,6 +53,9 @@ require(script.Parent.ExpeditionService)
 -- Monsters that hunt artifact-carriers during expeditions.
 require(script.Parent.MonsterService)
 
+-- The shared hub: where players spawn, and the multiplayer expedition queue.
+require(script.Parent.HubService)
+
 -- First-time onboarding state + completion reward.
 require(script.Parent.TutorialService)
 

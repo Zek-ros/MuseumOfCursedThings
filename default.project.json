@@ -52,6 +52,12 @@
 			},
 			"MonsterService": {
 				"$path": "src/server/MonsterService.lua"
+			},
+			"HubBuilder": {
+				"$path": "src/server/HubBuilder.lua"
+			},
+			"HubService": {
+				"$path": "src/server/HubService.lua"
 			}
 		},
 
@@ -93,6 +99,18 @@
 					"$className": "RemoteEvent"
 				},
 				"ExpeditionState": {
+					"$className": "RemoteEvent"
+				},
+				"QueueState": {
+					"$className": "RemoteEvent"
+				},
+				"OpenQueue": {
+					"$className": "RemoteEvent"
+				},
+				"LeaveExpeditionQueue": {
+					"$className": "RemoteEvent"
+				},
+				"LaunchExpeditionQueue": {
 					"$className": "RemoteEvent"
 				}
 			},
@@ -138,6 +156,12 @@
 					"$className": "RemoteFunction"
 				},
 				"ReturnHome": {
+					"$className": "RemoteFunction"
+				},
+				"GoToHub": {
+					"$className": "RemoteFunction"
+				},
+				"JoinExpeditionQueue": {
 					"$className": "RemoteFunction"
 				}
 			}
