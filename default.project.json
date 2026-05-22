@@ -58,6 +58,12 @@
 			},
 			"HubService": {
 				"$path": "src/server/HubService.lua"
+			},
+			"LeaderboardService": {
+				"$path": "src/server/LeaderboardService.lua"
+			},
+			"DailyRewardService": {
+				"$path": "src/server/DailyRewardService.lua"
 			}
 		},
 
@@ -162,6 +168,15 @@
 					"$className": "RemoteFunction"
 				},
 				"JoinExpeditionQueue": {
+					"$className": "RemoteFunction"
+				},
+				"GetLeaderboards": {
+					"$className": "RemoteFunction"
+				},
+				"GetDailyRewardStatus": {
+					"$className": "RemoteFunction"
+				},
+				"ClaimDailyReward": {
 					"$className": "RemoteFunction"
 				}
 			}

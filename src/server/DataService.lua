@@ -39,6 +39,7 @@ local DEFAULT_DATA = {
 	MuseumLevel = 1,
 	Discovered = {}, -- [artifactId] = true; powers the collection index
 	TutorialDone = false,
+	DailyReward = { LastClaim = 0, Streak = 0 }, -- daily login reward tracking
 	ResearchedArtifacts = {},
 	Statistics = {
 		ArtifactsCollected = 0,

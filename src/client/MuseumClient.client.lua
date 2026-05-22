@@ -33,6 +33,9 @@ local GetCollectionRF   = RemoteFunctions:WaitForChild("GetCollection")
 local VisitMuseumRF     = RemoteFunctions:WaitForChild("VisitMuseum")
 local ReturnHomeRF      = RemoteFunctions:WaitForChild("ReturnHome")
 local JoinQueueRF       = RemoteFunctions:WaitForChild("JoinExpeditionQueue")
+local GetLeaderboardsRF = RemoteFunctions:WaitForChild("GetLeaderboards")
+local GetDailyStatusRF  = RemoteFunctions:WaitForChild("GetDailyRewardStatus")
+local ClaimDailyRF      = RemoteFunctions:WaitForChild("ClaimDailyReward")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Constants = require(Shared:WaitForChild("Constants"))
@@ -202,11 +205,27 @@ local collectionButton = makeActionButton("CollectionButton", "📖 Collection",
 collectionButton.TextColor3 = THEME.Text
 local visitButton = makeActionButton("VisitButton", "👥 Visit Museums", THEME.PanelLight, 4)
 visitButton.TextColor3 = THEME.Text
+local leaderboardButton = makeActionButton("LeaderboardButton", "Leaderboard", THEME.PanelLight, 5)
+leaderboardButton.TextColor3 = THEME.Text
 
 -- Shown only while on an expedition
-local leaveButton = makeActionButton("LeaveExpeditionButton", "🏃 Leave Expedition", THEME.Bad, 5)
+local leaveButton = makeActionButton("LeaveExpeditionButton", "🏃 Leave Expedition", THEME.Bad, 6)
 leaveButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 leaveButton.Visible = false
+
+-- Daily reward button (top-right, highlights when claimable)
+local dailyButton = Instance.new("TextButton")
+dailyButton.Name = "DailyRewardButton"
+dailyButton.Size = UDim2.new(0, 170, 0, 38)
+dailyButton.AnchorPoint = Vector2.new(1, 0)
+dailyButton.Position = UDim2.new(1, -16, 0, 52)
+dailyButton.BackgroundColor3 = THEME.PanelLight
+dailyButton.TextColor3 = THEME.Text
+dailyButton.Font = Enum.Font.GothamBold
+dailyButton.TextSize = 14
+dailyButton.Text = "Daily Reward"
+dailyButton.Parent = screenGui
+corner(dailyButton, 8)
 
 -- Top-left navigation between the hub and your museum.
 -- NOTE: y starts at 52 to clear Roblox's own top bar / menu button — at y=16
@@ -508,6 +527,56 @@ leaveQueueBtn.Parent = queuePanel
 corner(leaveQueueBtn, 8)
 
 -- =============================================
+--  LEADERBOARD PANEL
+-- =============================================
+local leaderboardPanel = Instance.new("Frame")
+leaderboardPanel.Name = "LeaderboardPanel"
+leaderboardPanel.Size = UDim2.new(0, 460, 0, 460)
+leaderboardPanel.Position = UDim2.new(0.5, -230, 0.5, -230)
+leaderboardPanel.BackgroundColor3 = THEME.Panel
+leaderboardPanel.BackgroundTransparency = 0.05
+leaderboardPanel.Visible = false
+leaderboardPanel.Parent = screenGui
+corner(leaderboardPanel, 12)
+
+local lbTitle = Instance.new("TextLabel")
+lbTitle.Size = UDim2.new(1, -60, 0, 44)
+lbTitle.Position = UDim2.new(0, 16, 0, 8)
+lbTitle.BackgroundTransparency = 1
+lbTitle.TextColor3 = THEME.Text
+lbTitle.Font = Enum.Font.GothamBold
+lbTitle.TextSize = 22
+lbTitle.TextXAlignment = Enum.TextXAlignment.Left
+lbTitle.Text = "Leaderboards"
+lbTitle.Parent = leaderboardPanel
+
+local lbClose = Instance.new("TextButton")
+lbClose.Size = UDim2.new(0, 36, 0, 36)
+lbClose.Position = UDim2.new(1, -44, 0, 10)
+lbClose.BackgroundColor3 = THEME.Bad
+lbClose.TextColor3 = Color3.fromRGB(255, 255, 255)
+lbClose.Font = Enum.Font.GothamBold
+lbClose.TextSize = 20
+lbClose.Text = "X"
+lbClose.Parent = leaderboardPanel
+corner(lbClose, 8)
+
+local lbScroll = Instance.new("ScrollingFrame")
+lbScroll.Size = UDim2.new(1, -24, 1, -64)
+lbScroll.Position = UDim2.new(0, 12, 0, 56)
+lbScroll.BackgroundTransparency = 1
+lbScroll.BorderSizePixel = 0
+lbScroll.ScrollBarThickness = 6
+lbScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+lbScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+lbScroll.Parent = leaderboardPanel
+
+local lbLayout = Instance.new("UIListLayout")
+lbLayout.Padding = UDim.new(0, 4)
+lbLayout.SortOrder = Enum.SortOrder.LayoutOrder
+lbLayout.Parent = lbScroll
+
+-- =============================================
 --  FLOATING TEXT + BANNER HELPERS
 -- =============================================
 local function showFloatingText(text: string, color: Color3, yStart: number?)
@@ -794,6 +863,97 @@ end)
 
 closeButton.Activated:Connect(function()
 	inventoryPanel.Visible = false
+end)
+
+-- ===== Leaderboards =====
+local function lbHeaderRow(text: string, order: number)
+	local row = Instance.new("TextLabel")
+	row.Size = UDim2.new(1, -6, 0, 28)
+	row.LayoutOrder = order
+	row.BackgroundTransparency = 1
+	row.TextColor3 = THEME.Accent
+	row.Font = Enum.Font.GothamBold
+	row.TextSize = 16
+	row.TextXAlignment = Enum.TextXAlignment.Left
+	row.Text = text
+	row.Parent = lbScroll
+end
+
+local function lbEntryRow(text: string, order: number)
+	local row = Instance.new("TextLabel")
+	row.Size = UDim2.new(1, -6, 0, 22)
+	row.LayoutOrder = order
+	row.BackgroundTransparency = 1
+	row.TextColor3 = THEME.Text
+	row.Font = Enum.Font.Gotham
+	row.TextSize = 14
+	row.TextXAlignment = Enum.TextXAlignment.Left
+	row.Text = text
+	row.Parent = lbScroll
+end
+
+local function refreshLeaderboard()
+	for _, child in ipairs(lbScroll:GetChildren()) do
+		if child:IsA("TextLabel") then child:Destroy() end
+	end
+	local info = GetLeaderboardsRF:InvokeServer()
+	if not info then return end
+
+	lbTitle.Text = info.Global and "Leaderboards (Global)" or "Leaderboards (This Server)"
+	local order = 0
+
+	order += 1; lbHeaderRow("Top Curators  -  coins earned", order)
+	if #info.TopEarned == 0 then
+		order += 1; lbEntryRow("(no entries yet)", order)
+	end
+	for i, e in ipairs(info.TopEarned) do
+		order += 1; lbEntryRow(string.format("%d.  %s  -  %s", i, e.Name, tostring(e.Value)), order)
+	end
+
+	order += 1; lbHeaderRow("Top Collectors  -  artifacts discovered", order)
+	if #info.TopCollection == 0 then
+		order += 1; lbEntryRow("(no entries yet)", order)
+	end
+	for i, e in ipairs(info.TopCollection) do
+		order += 1; lbEntryRow(string.format("%d.  %s  -  %s / 25", i, e.Name, tostring(e.Value)), order)
+	end
+end
+
+leaderboardButton.Activated:Connect(function()
+	inventoryPanel.Visible = false
+	collectionPanel.Visible = false
+	visitPanel.Visible = false
+	leaderboardPanel.Visible = not leaderboardPanel.Visible
+	if leaderboardPanel.Visible then refreshLeaderboard() end
+end)
+
+lbClose.Activated:Connect(function()
+	leaderboardPanel.Visible = false
+end)
+
+-- ===== Daily reward =====
+local function updateDailyButton(status)
+	if status and status.Claimable then
+		dailyButton.Text = "Claim Daily Reward!"
+		dailyButton.BackgroundColor3 = THEME.Good
+		dailyButton.TextColor3 = Color3.fromRGB(20, 30, 20)
+	else
+		local hrs = status and math.ceil((status.SecondsUntilNext or 0) / 3600) or 0
+		dailyButton.Text = string.format("Daily Reward (%dh)", hrs)
+		dailyButton.BackgroundColor3 = THEME.PanelLight
+		dailyButton.TextColor3 = THEME.Text
+	end
+end
+
+dailyButton.Activated:Connect(function()
+	local result = ClaimDailyRF:InvokeServer()
+	if result and result.Granted then
+		showBanner(string.format("Daily reward claimed! +%d coins  (Day %d streak)", result.Amount, result.Streak),
+			Color3.fromRGB(20, 50, 30), THEME.Good, 3.5)
+	end
+	-- Re-fetch status to update the button (claimed -> cooldown)
+	local status = GetDailyStatusRF:InvokeServer()
+	updateDailyButton(status)
 end)
 
 museumButton.Activated:Connect(function()
@@ -1133,6 +1293,9 @@ task.spawn(function()
 		end
 		task.wait(0.5)
 	end
+	-- Daily reward button state
+	local status = GetDailyStatusRF:InvokeServer()
+	updateDailyButton(status)
 end)
 
 print("[Museum of Cursed Things] Client initialized.")

@@ -56,6 +56,10 @@ require(script.Parent.MonsterService)
 -- The shared hub: where players spawn, and the multiplayer expedition queue.
 require(script.Parent.HubService)
 
+-- Retention: global leaderboards + daily login rewards.
+require(script.Parent.LeaderboardService)
+require(script.Parent.DailyRewardService)
+
 -- First-time onboarding state + completion reward.
 require(script.Parent.TutorialService)
 
