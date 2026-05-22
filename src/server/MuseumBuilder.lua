@@ -151,7 +151,8 @@ function MuseumBuilder.Build(origin: CFrame, ownerName: string)
 	local portalBillboard = Instance.new("BillboardGui")
 	portalBillboard.Size = UDim2.new(0, 140, 0, 40)
 	portalBillboard.StudsOffset = Vector3.new(0, 6.5, 0)
-	portalBillboard.AlwaysOnTop = false
+	-- AlwaysOnTop so the portal frame doesn't hide the label; MaxDistance caps range.
+	portalBillboard.AlwaysOnTop = true
 	portalBillboard.MaxDistance = 60
 	local portalLabel = Instance.new("TextLabel")
 	portalLabel.Size = UDim2.fromScale(1, 1)

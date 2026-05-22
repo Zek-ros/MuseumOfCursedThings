@@ -31,7 +31,9 @@ local function labelOn(part: BasePart, text: string, color: Color3, offsetY: num
 	local billboard = Instance.new("BillboardGui")
 	billboard.Size = UDim2.new(0, 240, 0, 50)
 	billboard.StudsOffset = Vector3.new(0, offsetY, 0)
-	billboard.AlwaysOnTop = false
+	-- AlwaysOnTop so the sign/pad part doesn't occlude its own text; MaxDistance
+	-- still prevents it bleeding to other areas.
+	billboard.AlwaysOnTop = true
 	billboard.MaxDistance = 100
 	local label = Instance.new("TextLabel")
 	label.Size = UDim2.fromScale(1, 1)

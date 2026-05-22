@@ -120,6 +120,15 @@ task.spawn(function()
 			local data = DataService.GetData(player)
 			if not data or #data.Artifacts == 0 then continue end
 
+			-- Chaos only happens while the player is actually IN their museum
+			-- (don't pop chaos banners while they're in the hub / on expeditions).
+			local museum = PedestalService.GetMuseum(player)
+			if not museum then continue end
+			local char = player.Character
+			local hrp = char and char:FindFirstChild("HumanoidRootPart")
+			if not hrp then continue end
+			if (hrp.Position - museum.Origin.Position).Magnitude > 70 then continue end
+
 			local score = MuseumStats.CalculateDanger(data)
 			local tier = MuseumStats.GetDangerTier(score)
 			local chance = Constants.CHAOS_BASE_CHANCE[tier]
@@ -136,10 +145,7 @@ task.spawn(function()
 					end
 
 					-- Physical: spawn the real thing inside the museum
-					local museum = PedestalService.GetMuseum(player)
-					if museum then
-						ChaosEffects.Play(chosen, player, museum)
-					end
+					ChaosEffects.Play(chosen, player, museum)
 
 					-- Real visitors panic and scatter when scared
 					if chosen == "ScareVisitors" then
