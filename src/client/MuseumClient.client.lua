@@ -184,17 +184,17 @@ dangerLabel.TextXAlignment = Enum.TextXAlignment.Left
 dangerLabel.Text = "Danger: 0 (Low)"
 dangerLabel.Parent = topBar
 
--- ----- Bottom-left buttons -----
+-- ----- HUD action buttons (right edge — clear of the mobile joystick + jump button) -----
 local function makeActionButton(name: string, text: string, color: Color3, order: number)
 	local btn = Instance.new("TextButton")
 	btn.Name = name
-	btn.Size = UDim2.new(0, 190, 0, 46)
-	btn.Position = UDim2.new(0, 16, 1, -16 - (order * 56))
-	btn.AnchorPoint = Vector2.new(0, 1)
+	btn.Size = UDim2.new(0, 172, 0, 42)
+	btn.AnchorPoint = Vector2.new(1, 0)
+	btn.Position = UDim2.new(1, -12, 0, 92 + order * 48)
 	btn.BackgroundColor3 = color
 	btn.TextColor3 = Color3.fromRGB(20, 18, 26)
 	btn.Font = Enum.Font.GothamBold
-	btn.TextSize = 18
+	btn.TextSize = 16
 	btn.Text = text
 	btn.AutoButtonColor = true
 	btn.Parent = screenGui
@@ -217,13 +217,17 @@ leaveButton.Visible = false
 -- ===== Menu panel (holds the secondary screens) =====
 local menuPanel = Instance.new("Frame")
 menuPanel.Name = "MenuPanel"
-menuPanel.Size = UDim2.new(0, 280, 0, 360)
-menuPanel.Position = UDim2.new(0.5, -140, 0.5, -180)
+menuPanel.AnchorPoint = Vector2.new(0.5, 0.5)
+menuPanel.Position = UDim2.new(0.5, 0, 0.5, 0)
+menuPanel.Size = UDim2.new(0, 300, 0.8, 0) -- scale height fits small (mobile) screens
 menuPanel.BackgroundColor3 = THEME.Panel
 menuPanel.BackgroundTransparency = 0.05
 menuPanel.Visible = false
 menuPanel.Parent = screenGui
 corner(menuPanel, 12)
+local menuSizeCap = Instance.new("UISizeConstraint")
+menuSizeCap.MaxSize = Vector2.new(300, 460) -- don't get huge on desktop
+menuSizeCap.Parent = menuPanel
 
 local menuTitle = Instance.new("TextLabel")
 menuTitle.Size = UDim2.new(1, -60, 0, 40)
@@ -247,10 +251,14 @@ menuClose.Text = "X"
 menuClose.Parent = menuPanel
 corner(menuClose, 8)
 
-local menuList = Instance.new("Frame")
+local menuList = Instance.new("ScrollingFrame")
 menuList.Size = UDim2.new(1, -24, 1, -64)
 menuList.Position = UDim2.new(0, 12, 0, 56)
 menuList.BackgroundTransparency = 1
+menuList.BorderSizePixel = 0
+menuList.ScrollBarThickness = 6
+menuList.CanvasSize = UDim2.new(0, 0, 0, 0)
+menuList.AutomaticCanvasSize = Enum.AutomaticSize.Y
 menuList.Parent = menuPanel
 local menuListLayout = Instance.new("UIListLayout")
 menuListLayout.Padding = UDim.new(0, 8)
@@ -273,49 +281,16 @@ local function makeMenuEntry(name: string, text: string, order: number)
 end
 
 -- These keep their original variable names + handlers; only their home moved.
-local museumButton       = makeMenuEntry("MuseumButton", "🏛 Expand Museum", 1)
-local collectionButton   = makeMenuEntry("CollectionButton", "📖 Collection", 2)
-local achievementsButton = makeMenuEntry("AchievementsButton", "Achievements", 3)
-local leaderboardButton  = makeMenuEntry("LeaderboardButton", "Leaderboard", 4)
-local prestigeButton     = makeMenuEntry("PrestigeButton", "Prestige", 5)
-local visitButton        = makeMenuEntry("VisitButton", "👥 Visit Museums", 6)
-local shopButton         = makeMenuEntry("ShopButton", "🛒 Shop", 7)
-
--- Daily reward button (top-right, highlights when claimable)
-local dailyButton = Instance.new("TextButton")
-dailyButton.Name = "DailyRewardButton"
-dailyButton.Size = UDim2.new(0, 170, 0, 38)
-dailyButton.AnchorPoint = Vector2.new(1, 0)
-dailyButton.Position = UDim2.new(1, -16, 0, 52)
-dailyButton.BackgroundColor3 = THEME.PanelLight
-dailyButton.TextColor3 = THEME.Text
-dailyButton.Font = Enum.Font.GothamBold
-dailyButton.TextSize = 14
-dailyButton.Text = "Daily Reward"
-dailyButton.Parent = screenGui
-corner(dailyButton, 8)
-
--- Top-left navigation between the hub and your museum.
--- NOTE: y starts at 52 to clear Roblox's own top bar / menu button — at y=16
--- with IgnoreGuiInset these were hidden behind CoreGui and unclickable.
-local function makeNavButton(name: string, text: string, order: number, color: Color3)
-	local btn = Instance.new("TextButton")
-	btn.Name = name
-	btn.Size = UDim2.new(0, 160, 0, 36)
-	btn.Position = UDim2.new(0, 16, 0, 52 + order * 42)
-	btn.BackgroundColor3 = color
-	btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-	btn.Font = Enum.Font.GothamBold
-	btn.TextSize = 15
-	btn.Text = text
-	btn.Parent = screenGui
-	corner(btn, 8)
-	return btn
-end
--- You return to the hub by walking into the portal in your museum (not a button).
--- This button is just a quick "go to my own museum" (handy when visiting others).
-local myMuseumButton = makeNavButton("MyMuseumButton", "My Museum", 0, THEME.PanelLight)
-myMuseumButton.TextColor3 = THEME.Text
+-- Daily Reward + My Museum now live in the menu too (less on-screen clutter on mobile).
+local dailyButton        = makeMenuEntry("DailyRewardButton", "Daily Reward", 0)
+local myMuseumButton     = makeMenuEntry("MyMuseumButton", "🏛 My Museum", 1)
+local museumButton       = makeMenuEntry("MuseumButton", "🏛 Expand Museum", 2)
+local collectionButton   = makeMenuEntry("CollectionButton", "📖 Collection", 3)
+local achievementsButton = makeMenuEntry("AchievementsButton", "Achievements", 4)
+local leaderboardButton  = makeMenuEntry("LeaderboardButton", "Leaderboard", 5)
+local prestigeButton     = makeMenuEntry("PrestigeButton", "Prestige", 6)
+local visitButton        = makeMenuEntry("VisitButton", "👥 Visit Museums", 7)
+local shopButton         = makeMenuEntry("ShopButton", "🛒 Shop", 8)
 
 -- =============================================
 --  INVENTORY PANEL
@@ -1096,7 +1071,7 @@ menuClose.Activated:Connect(function()
 	menuPanel.Visible = false
 end)
 -- Picking any menu entry closes the menu (its own handler opens the target panel).
-for _, entry in ipairs({ museumButton, collectionButton, achievementsButton, leaderboardButton, prestigeButton, visitButton, shopButton }) do
+for _, entry in ipairs({ myMuseumButton, museumButton, collectionButton, achievementsButton, leaderboardButton, prestigeButton, visitButton, shopButton }) do
 	entry.Activated:Connect(function()
 		menuPanel.Visible = false
 	end)
@@ -1183,7 +1158,8 @@ end)
 
 -- ===== Daily reward =====
 local function updateDailyButton(status)
-	if status and status.Claimable then
+	local claimable = status and status.Claimable
+	if claimable then
 		dailyButton.Text = "Claim Daily Reward!"
 		dailyButton.BackgroundColor3 = THEME.Good
 		dailyButton.TextColor3 = Color3.fromRGB(20, 30, 20)
@@ -1193,6 +1169,10 @@ local function updateDailyButton(status)
 		dailyButton.BackgroundColor3 = THEME.PanelLight
 		dailyButton.TextColor3 = THEME.Text
 	end
+	-- Nudge the Menu button so players know a reward is waiting inside.
+	menuButton.Text = claimable and "≡ Menu  •" or "≡ Menu"
+	menuButton.BackgroundColor3 = claimable and THEME.Good or THEME.PanelLight
+	menuButton.TextColor3 = claimable and Color3.fromRGB(20, 30, 20) or THEME.Text
 end
 
 dailyButton.Activated:Connect(function()

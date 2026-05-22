@@ -196,6 +196,14 @@ local function handleGetCollection(player: Player)
 	if not data then return nil end
 
 	local discovered = data.Discovered or {}
+
+	-- Anything currently owned counts as discovered too — keeps the collection in
+	-- sync with the inventory even if the Discovered set is stale (old saves).
+	for _, artifact in ipairs(data.Artifacts) do
+		discovered[artifact.ArtifactId] = true
+	end
+	data.Discovered = discovered -- backfill so the set self-heals
+
 	local entries = {}
 	local discoveredCount = 0
 

@@ -110,6 +110,14 @@ function DataService.LoadData(player: Player)
 		end
 	end
 
+	-- Backfill discovery from owned artifacts (fixes old saves where Discovered
+	-- wasn't tracked, so the collection / leaderboard / achievements stay correct).
+	local loaded = playerData[player]
+	loaded.Discovered = loaded.Discovered or {}
+	for _, artifact in ipairs(loaded.Artifacts) do
+		loaded.Discovered[artifact.ArtifactId] = true
+	end
+
 	return playerData[player]
 end
 
