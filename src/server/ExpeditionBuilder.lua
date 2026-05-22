@@ -1,23 +1,23 @@
 -- ExpeditionBuilder.lua (ModuleScript)
--- Builds the shared expedition map: a dim, cold "abandoned location" where
--- artifacts spawn to be collected and carried back to an extraction pad.
--- Geometry is procedural so it lives in the Rojo project (swap for real
--- models / multiple themed maps later).
+-- Generates a PROCEDURAL maze for each expedition — a different layout every
+-- server start, built entirely from primitives so it needs no bespoke art.
+-- The space is intentionally dark and lightless: the only light comes from the
+-- player's flashlight (client-side), the green extraction pad, the faint glow
+-- of artifacts, and monster eyes. `def` supplies Width/Height in cells
+-- (see ExpeditionMaps). Returns { Model, SpawnCFrame, ExtractionZone,
+-- SpawnPoints = {CFrame...}, HalfX, HalfZ }.
 
 local ExpeditionBuilder = {}
 
-local EX_X = 90
-local EX_Z = 70
-local WALL_HEIGHT = 20
-local WALL_THICK = 1
+local CELL        = 16   -- studs per maze cell (wide enough to run through)
+local WALL_HEIGHT = 18
+local WALL_THICK  = 1
+local BRAID       = 0.16 -- chance an internal wall is dropped → loops/shortcuts
 
--- Fallback theme if none is supplied
-local DEFAULT_THEME = {
-	Floor  = Color3.fromRGB(30, 34, 38),
-	Wall   = Color3.fromRGB(22, 26, 30),
-	Pillar = Color3.fromRGB(40, 44, 50),
-	Light  = Color3.fromRGB(120, 200, 220),
-}
+-- One dark palette for every map; atmosphere comes from lighting, not themes.
+local FLOOR_COLOR = Color3.fromRGB(24, 24, 30)
+local WALL_COLOR  = Color3.fromRGB(34, 32, 42)
+local CRATE_COLOR = Color3.fromRGB(60, 50, 38)
 
 local function makePart(origin, parent, name, size, localPos, color, material)
 	local part = Instance.new("Part")
@@ -33,196 +33,124 @@ local function makePart(origin, parent, name, size, localPos, color, material)
 	return part
 end
 
--- Like makePart but takes a full local CFrame (so props can be rotated).
-local function makePartCF(origin, parent, name, size, cframeLocal, color, material)
-	local part = Instance.new("Part")
-	part.Name = name
-	part.Anchored = true
-	part.Size = size
-	part.CFrame = origin * cframeLocal
-	part.Color = color
-	part.Material = material
-	part.TopSurface = Enum.SurfaceType.Smooth
-	part.BottomSurface = Enum.SurfaceType.Smooth
-	part.Parent = parent
-	return part
-end
+--- Carve a maze with an iterative recursive-backtracker. Returns two grids of
+--- open passages: openE[c][r] = passage to the cell to the east of (c,r);
+--- openS[c][r] = passage to the cell to the south. This is a spanning tree, so
+--- every cell is reachable (artifacts and extraction can never be sealed off).
+local function carveMaze(W: number, H: number)
+	local visited, openE, openS = {}, {}, {}
+	for c = 1, W do
+		visited[c], openE[c], openS[c] = {}, {}, {}
+	end
 
--- =============================================
---  THEMED PROPS — make each map read as a distinct place.
---  (Procedural for now; swap for real models via ModelFactory later.)
--- =============================================
-local function schoolProps(origin, model)
-	-- Cracked chalkboard on the back wall
-	makePart(origin, model, "Chalkboard", Vector3.new(26, 9, 0.4),
-		Vector3.new(0, 8, -34.6), Color3.fromRGB(24, 60, 42), Enum.Material.SmoothPlastic)
-	-- Rows of desks
-	for _, dx in ipairs({ -30, -18, -6, 6, 18, 30 }) do
-		for _, dz in ipairs({ -24, -12 }) do
-			makePart(origin, model, "Desk", Vector3.new(3, 2, 2),
-				Vector3.new(dx, 1, dz), Color3.fromRGB(95, 62, 40), Enum.Material.Wood)
+	local stack = { { 1, 1 } }
+	visited[1][1] = true
+	while #stack > 0 do
+		local cell = stack[#stack]
+		local c, r = cell[1], cell[2]
+
+		local nbrs = {}
+		if c > 1 and not visited[c - 1][r] then table.insert(nbrs, { c - 1, r, "W" }) end
+		if c < W and not visited[c + 1][r] then table.insert(nbrs, { c + 1, r, "E" }) end
+		if r > 1 and not visited[c][r - 1] then table.insert(nbrs, { c, r - 1, "N" }) end
+		if r < H and not visited[c][r + 1] then table.insert(nbrs, { c, r + 1, "S" }) end
+
+		if #nbrs == 0 then
+			table.remove(stack)
+		else
+			local n = nbrs[math.random(#nbrs)]
+			local nc, nr, dir = n[1], n[2], n[3]
+			if dir == "E" then
+				openE[c][r] = true
+			elseif dir == "W" then
+				openE[nc][nr] = true
+			elseif dir == "S" then
+				openS[c][r] = true
+			else -- "N"
+				openS[nc][nr] = true
+			end
+			visited[nc][nr] = true
+			table.insert(stack, { nc, nr })
 		end
 	end
-	-- Lockers down both side walls
-	for _, lz in ipairs({ -22, -10, 2, 14 }) do
-		makePart(origin, model, "Locker", Vector3.new(2, 9, 4),
-			Vector3.new(-43.5, 4.5, lz), Color3.fromRGB(80, 92, 112), Enum.Material.Metal)
-		makePart(origin, model, "Locker", Vector3.new(2, 9, 4),
-			Vector3.new(43.5, 4.5, lz), Color3.fromRGB(80, 92, 112), Enum.Material.Metal)
-	end
+
+	return openE, openS
 end
 
-local function labProps(origin, model)
-	-- Glowing containment pods along the back
-	for _, px in ipairs({ -28, -14, 0, 14, 28 }) do
-		local pod = makePartCF(origin, model, "ContainmentPod", Vector3.new(7, 4, 4),
-			CFrame.new(px, 3.5, -28) * CFrame.Angles(0, 0, math.rad(90)),
-			Color3.fromRGB(90, 180, 220), Enum.Material.Neon)
-		pod.Shape = Enum.PartType.Cylinder
-		pod.Transparency = 0.45
-		local glow = Instance.new("PointLight")
-		glow.Color = Color3.fromRGB(90, 180, 220)
-		glow.Range = 12
-		glow.Brightness = 2
-		glow.Parent = pod
-	end
-	-- Steel lab tables
-	for _, tx in ipairs({ -24, -8, 8, 24 }) do
-		makePart(origin, model, "LabTable", Vector3.new(8, 3, 3),
-			Vector3.new(tx, 1.5, -6), Color3.fromRGB(120, 128, 135), Enum.Material.Metal)
-	end
-	-- Caution stripe on the floor
-	makePart(origin, model, "Caution", Vector3.new(60, 0.12, 2),
-		Vector3.new(0, 0.07, 14), Color3.fromRGB(220, 200, 40), Enum.Material.SmoothPlastic)
-end
-
-local function mallProps(origin, model)
-	local storeColors = {
-		Color3.fromRGB(200, 80, 90),
-		Color3.fromRGB(80, 160, 200),
-		Color3.fromRGB(200, 180, 80),
-		Color3.fromRGB(150, 100, 200),
-	}
-	local i = 0
-	for _, sz in ipairs({ -22, -6, 10 }) do
-		i += 1
-		makePart(origin, model, "Storefront", Vector3.new(1.2, 10, 12),
-			Vector3.new(-43.4, 5, sz), storeColors[((i - 1) % #storeColors) + 1], Enum.Material.SmoothPlastic)
-		makePart(origin, model, "Storefront", Vector3.new(1.2, 10, 12),
-			Vector3.new(43.4, 5, sz), storeColors[(i % #storeColors) + 1], Enum.Material.SmoothPlastic)
-	end
-	-- Dry fountain in the middle
-	local basin = makePartCF(origin, model, "Fountain", Vector3.new(2, 12, 12),
-		CFrame.new(0, 1, -6) * CFrame.Angles(0, 0, math.rad(90)),
-		Color3.fromRGB(120, 120, 130), Enum.Material.Marble)
-	basin.Shape = Enum.PartType.Cylinder
-	-- Planters
-	for _, px in ipairs({ -20, 20 }) do
-		makePart(origin, model, "Planter", Vector3.new(4, 2, 4),
-			Vector3.new(px, 1, -22), Color3.fromRGB(90, 70, 55), Enum.Material.Wood)
-	end
-end
-
-local PROP_BUILDERS = {
-	school = schoolProps,
-	lab = labProps,
-	mall = mallProps,
-}
-
-local function buildProps(origin, model, theme)
-	local fn = PROP_BUILDERS[theme.Theme]
-	if fn then
-		local ok, err = pcall(fn, origin, model)
-		if not ok then
-			warn("[ExpeditionBuilder] props for " .. tostring(theme.Theme) .. " failed: " .. tostring(err))
-		end
-	end
-end
-
---- Build the expedition map at the given origin (center of floor top).
--- `theme` supplies Floor/Wall/Pillar/Light colors (see ExpeditionMaps).
--- Returns { Model, SpawnCFrame, ExtractionZone, SpawnPoints = {CFrame...} }.
-function ExpeditionBuilder.Build(origin: CFrame, theme)
-	theme = theme or DEFAULT_THEME
-	local floorColor  = theme.Floor  or DEFAULT_THEME.Floor
-	local wallColor   = theme.Wall   or DEFAULT_THEME.Wall
-	local pillarColor = theme.Pillar or DEFAULT_THEME.Pillar
-	local lightColor  = theme.Light  or DEFAULT_THEME.Light
-
-	local model = Instance.new("Model")
-	model.Name = "ExpeditionMap_" .. (theme.Id or "default")
-
-	local halfX, halfZ = EX_X / 2, EX_Z / 2
+--- Build the procedural maze at `origin` (center of the floor top).
+function ExpeditionBuilder.Build(origin: CFrame, def)
+	local W = (def and def.Width) or 6
+	local H = (def and def.Height) or 5
+	local roomX, roomZ = W * CELL, H * CELL
+	local halfX, halfZ = roomX / 2, roomZ / 2
 	local wallY = WALL_HEIGHT / 2
 
-	-- Floor
-	makePart(origin, model, "Floor",
-		Vector3.new(EX_X, WALL_THICK, EX_Z),
-		Vector3.new(0, -WALL_THICK / 2, 0), floorColor, Enum.Material.Concrete)
+	local model = Instance.new("Model")
+	model.Name = "ExpeditionMap_" .. ((def and def.Id) or "maze")
 
-	-- Walls
-	makePart(origin, model, "WallBack", Vector3.new(EX_X, WALL_HEIGHT, WALL_THICK),
-		Vector3.new(0, wallY, -halfZ), wallColor, Enum.Material.Concrete)
-	makePart(origin, model, "WallFront", Vector3.new(EX_X, WALL_HEIGHT, WALL_THICK),
-		Vector3.new(0, wallY, halfZ), wallColor, Enum.Material.Concrete)
-	makePart(origin, model, "WallLeft", Vector3.new(WALL_THICK, WALL_HEIGHT, EX_Z),
-		Vector3.new(-halfX, wallY, 0), wallColor, Enum.Material.Concrete)
-	makePart(origin, model, "WallRight", Vector3.new(WALL_THICK, WALL_HEIGHT, EX_Z),
-		Vector3.new(halfX, wallY, 0), wallColor, Enum.Material.Concrete)
+	-- Local center of cell (c, r): c = 1..W along X, r = 1..H along Z.
+	local function cellPos(c: number, r: number): Vector3
+		return Vector3.new((c - 0.5) * CELL - halfX, 0, (r - 0.5) * CELL - halfZ)
+	end
 
-	-- Roof
-	makePart(origin, model, "Ceiling", Vector3.new(EX_X, WALL_THICK, EX_Z),
-		Vector3.new(0, WALL_HEIGHT + WALL_THICK / 2, 0), wallColor, Enum.Material.Concrete)
+	-- Floor + roof (the roof keeps skylight out so it stays dark inside)
+	makePart(origin, model, "Floor", Vector3.new(roomX, WALL_THICK, roomZ),
+		Vector3.new(0, -WALL_THICK / 2, 0), FLOOR_COLOR, Enum.Material.Concrete)
+	makePart(origin, model, "Ceiling", Vector3.new(roomX, WALL_THICK, roomZ),
+		Vector3.new(0, WALL_HEIGHT + WALL_THICK / 2, 0), WALL_COLOR, Enum.Material.Concrete)
 
-	-- Atmospheric pillars + lights
-	for _, px in ipairs({ -22, 0, 22 }) do
-		for _, pz in ipairs({ -16, 16 }) do
-			makePart(origin, model, "Pillar", Vector3.new(4, WALL_HEIGHT, 4),
-				Vector3.new(px, wallY, pz), pillarColor, Enum.Material.Slate)
-			local fixture = makePart(origin, model, "LightFixture", Vector3.new(2, 0.4, 2),
-				Vector3.new(px, WALL_HEIGHT - 1, pz), Color3.fromRGB(15, 15, 15), Enum.Material.Metal)
-			local light = Instance.new("PointLight")
-			light.Color = lightColor
-			light.Brightness = 1.5
-			light.Range = 22
-			light.Parent = fixture
+	-- Outer walls
+	makePart(origin, model, "WallBack", Vector3.new(roomX, WALL_HEIGHT, WALL_THICK),
+		Vector3.new(0, wallY, -halfZ), WALL_COLOR, Enum.Material.Concrete)
+	makePart(origin, model, "WallFront", Vector3.new(roomX, WALL_HEIGHT, WALL_THICK),
+		Vector3.new(0, wallY, halfZ), WALL_COLOR, Enum.Material.Concrete)
+	makePart(origin, model, "WallLeft", Vector3.new(WALL_THICK, WALL_HEIGHT, roomZ),
+		Vector3.new(-halfX, wallY, 0), WALL_COLOR, Enum.Material.Concrete)
+	makePart(origin, model, "WallRight", Vector3.new(WALL_THICK, WALL_HEIGHT, roomZ),
+		Vector3.new(halfX, wallY, 0), WALL_COLOR, Enum.Material.Concrete)
+
+	-- Internal maze walls (braided so there are loops, not a single dead path)
+	local openE, openS = carveMaze(W, H)
+	for c = 1, W do
+		for r = 1, H do
+			local p = cellPos(c, r)
+			if c < W and not openE[c][r] and math.random() > BRAID then
+				makePart(origin, model, "MazeWall", Vector3.new(WALL_THICK, WALL_HEIGHT, CELL),
+					Vector3.new(p.X + CELL / 2, wallY, p.Z), WALL_COLOR, Enum.Material.Concrete)
+			end
+			if r < H and not openS[c][r] and math.random() > BRAID then
+				makePart(origin, model, "MazeWall", Vector3.new(CELL + WALL_THICK, WALL_HEIGHT, WALL_THICK),
+					Vector3.new(p.X, wallY, p.Z + CELL / 2), WALL_COLOR, Enum.Material.Concrete)
+			end
 		end
 	end
 
-	-- Themed props that make this map look like its name
-	buildProps(origin, model, theme)
+	-- Entrance cell at the front-center: you arrive on the extraction pad and
+	-- must head into the dark to find artifacts, then return here to extract.
+	local entranceC = math.ceil(W / 2)
+	local entrance = cellPos(entranceC, H)
+	local spawnCFrame = origin * CFrame.new(entrance.X, 4, entrance.Z)
 
-	-- Obstacle crates: cover that blocks sightlines/movement and hides artifacts.
-	local crateColor = Color3.fromRGB(82, 64, 44)
-	for _, spot in ipairs({ { -28, -22 }, { 28, -22 }, { -18, -2 }, { 18, -2 }, { 0, -26 }, { -34, 12 }, { 34, 12 } }) do
-		local cx, cz = spot[1], spot[2]
-		makePart(origin, model, "Crate", Vector3.new(5, 5, 5), Vector3.new(cx, 2.5, cz), crateColor, Enum.Material.WoodPlanks)
-		makePart(origin, model, "Crate", Vector3.new(3, 3, 3), Vector3.new(cx + 3.5, 1.5, cz - 1.5), crateColor, Enum.Material.WoodPlanks)
-	end
-
-	-- Entrance / arrival spawn near the front wall
-	local spawnCFrame = origin * CFrame.new(0, 4, halfZ - 8)
-
-	-- Extraction pad next to the entrance (glowing green)
+	-- Extraction pad: the one bright landmark — it also lights your way home.
 	local extraction = Instance.new("Part")
 	extraction.Name = "ExtractionZone"
 	extraction.Anchored = true
 	extraction.CanCollide = false
-	extraction.Size = Vector3.new(12, 1, 12)
-	extraction.CFrame = origin * CFrame.new(0, 0.5, halfZ - 8)
+	extraction.Size = Vector3.new(CELL - 3, 1, CELL - 3)
+	extraction.CFrame = origin * CFrame.new(entrance.X, 0.5, entrance.Z)
 	extraction.Color = Color3.fromRGB(60, 230, 120)
 	extraction.Material = Enum.Material.Neon
 	extraction.Transparency = 0.35
 	local exLight = Instance.new("PointLight")
 	exLight.Color = Color3.fromRGB(80, 255, 140)
-	exLight.Range = 20
-	exLight.Brightness = 4
+	exLight.Range = 26
+	exLight.Brightness = 5
 	exLight.Parent = extraction
 	local exBillboard = Instance.new("BillboardGui")
 	exBillboard.Size = UDim2.new(0, 220, 0, 50)
 	exBillboard.StudsOffset = Vector3.new(0, 5, 0)
 	exBillboard.AlwaysOnTop = false
-	exBillboard.MaxDistance = 120 -- visible across the map you're in, not beyond
+	exBillboard.MaxDistance = 90
 	local exLabel = Instance.new("TextLabel")
 	exLabel.Size = UDim2.fromScale(1, 1)
 	exLabel.BackgroundTransparency = 1
@@ -234,20 +162,37 @@ function ExpeditionBuilder.Build(origin: CFrame, theme)
 	exBillboard.Parent = extraction
 	extraction.Parent = model
 
-	-- A POOL of hidden-ish positions (corners, against walls, behind the crates,
-	-- low to the floor). Only a few are filled at a time — you have to explore.
-	local function sp(x: number, z: number, y: number?)
-		return origin * CFrame.new(x, y or 2.4, z)
+	-- All non-entrance cells, shuffled — split between the artifact pool and crates.
+	local cells = {}
+	for c = 1, W do
+		for r = 1, H do
+			if not (c == entranceC and r == H) then
+				table.insert(cells, { c, r })
+			end
+		end
 	end
-	local spawnPoints = {
-		sp(-40, -30), sp(40, -30),        -- back corners
-		sp(-40, 14),  sp(40, 14),         -- side-wall nooks near the front
-		sp(-28, -26), sp(28, -26),        -- tucked behind the back crates
-		sp(-18, -6),  sp(18, -6),         -- behind the mid crates
-		sp(0, -31),                       -- against the back wall, center
-		sp(-34, 8),   sp(34, 8),          -- mid side-wall nooks
-		sp(0, -12),                       -- one fairly open
-	}
+	for i = #cells, 2, -1 do
+		local j = math.random(i)
+		cells[i], cells[j] = cells[j], cells[i]
+	end
+
+	-- Artifact spawn pool: random cells, low to the floor, deep in the dark maze.
+	local poolCount = math.min(14, #cells)
+	local spawnPoints = {}
+	for i = 1, poolCount do
+		local p = cellPos(cells[i][1], cells[i][2])
+		table.insert(spawnPoints, origin * CFrame.new(p.X, 2.4, p.Z))
+	end
+
+	-- Crates for cover, in cells the artifacts don't use (disjoint, so nothing
+	-- spawns inside a crate).
+	local crateCount = math.min(6, #cells - poolCount)
+	for i = 1, crateCount do
+		local cell = cells[poolCount + i]
+		local p = cellPos(cell[1], cell[2])
+		makePart(origin, model, "Crate", Vector3.new(4, 4, 4),
+			Vector3.new(p.X + math.random(-3, 3), 2, p.Z + math.random(-3, 3)), CRATE_COLOR, Enum.Material.WoodPlanks)
+	end
 
 	return {
 		Model = model,
@@ -258,9 +203,5 @@ function ExpeditionBuilder.Build(origin: CFrame, theme)
 		HalfZ = halfZ,
 	}
 end
-
--- Exposed so MonsterService can confine patrol monsters to the room.
-ExpeditionBuilder.EX_X = EX_X
-ExpeditionBuilder.EX_Z = EX_Z
 
 return ExpeditionBuilder

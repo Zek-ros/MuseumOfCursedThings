@@ -1596,6 +1596,99 @@ leaveButton.Activated:Connect(function()
 	LeaveExpeditionEvent:FireServer()
 end)
 
+-- =============================================
+--  EXPEDITION DARKNESS + FLASHLIGHT
+--  The maze is built lightless. While you're inside we crush this client's
+--  Lighting to near-black with fog, and clip a flashlight onto your character.
+--  Restored on extract/leave. Lighting is per-client, so this never touches the
+--  museum/hub or what other players see.
+-- =============================================
+local savedLighting = nil
+local inDarkness = false
+
+local function attachFlashlight()
+	local char = player.Character
+	local mount = char and (char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart"))
+	if not mount or mount:FindFirstChild("ExpeditionFlashlight") then return end
+
+	local beam = Instance.new("SpotLight")
+	beam.Name = "ExpeditionFlashlight"
+	beam.Face = Enum.NormalId.Front
+	beam.Angle = 75
+	beam.Range = 42
+	beam.Brightness = 3
+	beam.Color = Color3.fromRGB(255, 244, 214)
+	beam.Parent = mount
+
+	-- A small bubble so you're not blind right around yourself.
+	local bubble = Instance.new("PointLight")
+	bubble.Name = "ExpeditionGlow"
+	bubble.Range = 12
+	bubble.Brightness = 0.8
+	bubble.Color = Color3.fromRGB(190, 200, 230)
+	bubble.Parent = mount
+end
+
+local function removeFlashlight()
+	local char = player.Character
+	if not char then return end
+	for _, partName in ipairs({ "Head", "HumanoidRootPart" }) do
+		local mount = char:FindFirstChild(partName)
+		if mount then
+			local f = mount:FindFirstChild("ExpeditionFlashlight")
+			if f then f:Destroy() end
+			local g = mount:FindFirstChild("ExpeditionGlow")
+			if g then g:Destroy() end
+		end
+	end
+end
+
+local function enterDarkness()
+	if not savedLighting then
+		savedLighting = {
+			Ambient = Lighting.Ambient,
+			OutdoorAmbient = Lighting.OutdoorAmbient,
+			Brightness = Lighting.Brightness,
+			ClockTime = Lighting.ClockTime,
+			FogStart = Lighting.FogStart,
+			FogEnd = Lighting.FogEnd,
+			FogColor = Lighting.FogColor,
+		}
+	end
+	inDarkness = true
+	Lighting.Ambient = Color3.fromRGB(6, 6, 10)
+	Lighting.OutdoorAmbient = Color3.fromRGB(6, 6, 10)
+	Lighting.Brightness = 0
+	Lighting.ClockTime = 0
+	Lighting.FogColor = Color3.fromRGB(0, 0, 0)
+	Lighting.FogStart = 20
+	Lighting.FogEnd = 75
+	attachFlashlight()
+end
+
+local function exitDarkness()
+	if savedLighting then
+		Lighting.Ambient = savedLighting.Ambient
+		Lighting.OutdoorAmbient = savedLighting.OutdoorAmbient
+		Lighting.Brightness = savedLighting.Brightness
+		Lighting.ClockTime = savedLighting.ClockTime
+		Lighting.FogStart = savedLighting.FogStart
+		Lighting.FogEnd = savedLighting.FogEnd
+		Lighting.FogColor = savedLighting.FogColor
+		savedLighting = nil
+	end
+	inDarkness = false
+	removeFlashlight()
+end
+
+-- Re-light the player if they respawn mid-expedition.
+player.CharacterAdded:Connect(function()
+	if inDarkness then
+		task.wait(0.5)
+		if inDarkness then attachFlashlight() end
+	end
+end)
+
 -- Server tells us about expedition progress (entered / carrying / extracted / left)
 ExpeditionStateEvent.OnClientEvent:Connect(function(info)
 	local state = info.State
@@ -1603,8 +1696,9 @@ ExpeditionStateEvent.OnClientEvent:Connect(function(info)
 		expeditionButton.Visible = false
 		leaveButton.Visible = true
 		queuePanel.Visible = false -- the queue launched
-		showBanner("Find a cursed artifact and carry it to the green EXTRACTION pad!",
-			Color3.fromRGB(20, 40, 30), Color3.fromRGB(160, 255, 200), 4)
+		enterDarkness()
+		showBanner("It's pitch black in here. Use your flashlight to find an artifact, then carry it to the green EXTRACTION pad!",
+			Color3.fromRGB(20, 40, 30), Color3.fromRGB(160, 255, 200), 4.5)
 	elseif state == "Carrying" then
 		showBanner(string.format("Picked up %s — get to the EXTRACTION pad!", info.ArtifactName or "an artifact"),
 			Color3.fromRGB(30, 30, 50), Color3.fromRGB(220, 220, 255), 3)
@@ -1613,6 +1707,7 @@ ExpeditionStateEvent.OnClientEvent:Connect(function(info)
 	elseif state == "Extracted" then
 		expeditionButton.Visible = true
 		leaveButton.Visible = false
+		exitDarkness()
 		showBanner(string.format("Extracted %s! Added to your collection.", info.ArtifactName or "an artifact"),
 			Color3.fromRGB(20, 50, 30), THEME.Good, 3.5)
 		-- Reflect the new artifact + extraction reward
@@ -1626,6 +1721,7 @@ ExpeditionStateEvent.OnClientEvent:Connect(function(info)
 	elseif state == "Left" then
 		expeditionButton.Visible = true
 		leaveButton.Visible = false
+		exitDarkness()
 		showBanner("Returned to your museum empty-handed.", THEME.PanelLight, THEME.Text, 2)
 	end
 end)
