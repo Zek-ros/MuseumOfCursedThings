@@ -41,6 +41,8 @@ local DEFAULT_DATA = {
 	TutorialDone = false,
 	Prestige = 0, -- rebirth count; permanent income multiplier
 	Achievements = {}, -- [achievementId] = true once unlocked
+	DoubleIncome = false, -- "Double Income" game pass (set from ownership on join)
+	VIP = false,          -- "VIP Curator" game pass
 	DailyReward = { LastClaim = 0, Streak = 0 }, -- daily login reward tracking
 	ResearchedArtifacts = {},
 	Statistics = {

@@ -55,6 +55,9 @@ function DailyRewardService.Claim(player: Player)
 	dr.LastClaim = now
 
 	local amount = BASE_REWARD * dr.Streak
+	if data.VIP then
+		amount = math.floor(amount * 1.5) -- VIP game pass: +50% daily reward
+	end
 	DataService.UpdateCurrency(player, amount)
 	-- Nudge the client to refresh its currency display
 	MuseumChangedEvent:FireClient(player)

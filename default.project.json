@@ -70,6 +70,9 @@
 			},
 			"AchievementService": {
 				"$path": "src/server/AchievementService.lua"
+			},
+			"MonetizationService": {
+				"$path": "src/server/MonetizationService.lua"
 			}
 		},
 
@@ -91,6 +94,9 @@
 				},
 				"AchievementData": {
 					"$path": "src/shared/AchievementData.lua"
+				},
+				"MonetizationConfig": {
+					"$path": "src/shared/MonetizationConfig.lua"
 				},
 				"SoundData": {
 					"$path": "src/shared/SoundData.lua"
@@ -198,6 +204,9 @@
 					"$className": "RemoteFunction"
 				},
 				"GetAchievements": {
+					"$className": "RemoteFunction"
+				},
+				"GetShop": {
 					"$className": "RemoteFunction"
 				}
 			}

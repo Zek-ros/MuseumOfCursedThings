@@ -42,7 +42,20 @@ function MuseumStats.CalculateIncome(data): number
 	-- Prestige: a permanent multiplier earned by rebirthing.
 	total *= MuseumStats.PrestigeMultiplier(data)
 
+	-- Game-pass multipliers (Double Income, VIP).
+	total *= MuseumStats.MonetizationMultiplier(data)
+
 	return math.floor(total)
+end
+
+--- Income multiplier from owned game passes.
+function MuseumStats.MonetizationMultiplier(data): number
+	local m = 1
+	if data then
+		if data.DoubleIncome then m *= 2 end
+		if data.VIP then m *= 1.5 end
+	end
+	return m
 end
 
 --- Permanent income multiplier from the player's prestige level.

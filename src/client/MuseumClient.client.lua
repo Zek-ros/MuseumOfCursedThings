@@ -40,6 +40,9 @@ local ClaimDailyRF      = RemoteFunctions:WaitForChild("ClaimDailyReward")
 local GetPrestigeInfoRF = RemoteFunctions:WaitForChild("GetPrestigeInfo")
 local PrestigeRF        = RemoteFunctions:WaitForChild("Prestige")
 local GetAchievementsRF = RemoteFunctions:WaitForChild("GetAchievements")
+local GetShopRF         = RemoteFunctions:WaitForChild("GetShop")
+
+local MarketplaceService = game:GetService("MarketplaceService")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Constants = require(Shared:WaitForChild("Constants"))
@@ -199,27 +202,84 @@ local function makeActionButton(name: string, text: string, color: Color3, order
 	return btn
 end
 
-local expeditionButton = makeActionButton("ExpeditionButton", "🔦 Go on Expedition", THEME.Accent, 1)
+-- Primary actions stay on the HUD; everything else lives behind the Menu.
 local inventoryButton  = makeActionButton("InventoryButton", "🏛 Inventory", THEME.PanelLight, 0)
 inventoryButton.TextColor3 = THEME.Text
-
-local museumButton  = makeActionButton("MuseumButton", "🏛 Expand Museum", THEME.PanelLight, 2)
-museumButton.TextColor3 = THEME.Text
-local collectionButton = makeActionButton("CollectionButton", "📖 Collection", THEME.PanelLight, 3)
-collectionButton.TextColor3 = THEME.Text
-local visitButton = makeActionButton("VisitButton", "👥 Visit Museums", THEME.PanelLight, 4)
-visitButton.TextColor3 = THEME.Text
-local leaderboardButton = makeActionButton("LeaderboardButton", "Leaderboard", THEME.PanelLight, 5)
-leaderboardButton.TextColor3 = THEME.Text
-local prestigeButton = makeActionButton("PrestigeButton", "Prestige", THEME.PanelLight, 6)
-prestigeButton.TextColor3 = THEME.Text
-local achievementsButton = makeActionButton("AchievementsButton", "Achievements", THEME.PanelLight, 7)
-achievementsButton.TextColor3 = THEME.Text
+local expeditionButton = makeActionButton("ExpeditionButton", "🔦 Go on Expedition", THEME.Accent, 1)
+local menuButton = makeActionButton("MenuButton", "≡ Menu", THEME.PanelLight, 2)
+menuButton.TextColor3 = THEME.Text
 
 -- Shown only while on an expedition
-local leaveButton = makeActionButton("LeaveExpeditionButton", "🏃 Leave Expedition", THEME.Bad, 8)
+local leaveButton = makeActionButton("LeaveExpeditionButton", "🏃 Leave Expedition", THEME.Bad, 3)
 leaveButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 leaveButton.Visible = false
+
+-- ===== Menu panel (holds the secondary screens) =====
+local menuPanel = Instance.new("Frame")
+menuPanel.Name = "MenuPanel"
+menuPanel.Size = UDim2.new(0, 280, 0, 360)
+menuPanel.Position = UDim2.new(0.5, -140, 0.5, -180)
+menuPanel.BackgroundColor3 = THEME.Panel
+menuPanel.BackgroundTransparency = 0.05
+menuPanel.Visible = false
+menuPanel.Parent = screenGui
+corner(menuPanel, 12)
+
+local menuTitle = Instance.new("TextLabel")
+menuTitle.Size = UDim2.new(1, -60, 0, 40)
+menuTitle.Position = UDim2.new(0, 16, 0, 10)
+menuTitle.BackgroundTransparency = 1
+menuTitle.TextColor3 = THEME.Text
+menuTitle.Font = Enum.Font.GothamBold
+menuTitle.TextSize = 22
+menuTitle.TextXAlignment = Enum.TextXAlignment.Left
+menuTitle.Text = "Menu"
+menuTitle.Parent = menuPanel
+
+local menuClose = Instance.new("TextButton")
+menuClose.Size = UDim2.new(0, 36, 0, 36)
+menuClose.Position = UDim2.new(1, -44, 0, 10)
+menuClose.BackgroundColor3 = THEME.Bad
+menuClose.TextColor3 = Color3.fromRGB(255, 255, 255)
+menuClose.Font = Enum.Font.GothamBold
+menuClose.TextSize = 20
+menuClose.Text = "X"
+menuClose.Parent = menuPanel
+corner(menuClose, 8)
+
+local menuList = Instance.new("Frame")
+menuList.Size = UDim2.new(1, -24, 1, -64)
+menuList.Position = UDim2.new(0, 12, 0, 56)
+menuList.BackgroundTransparency = 1
+menuList.Parent = menuPanel
+local menuListLayout = Instance.new("UIListLayout")
+menuListLayout.Padding = UDim.new(0, 8)
+menuListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+menuListLayout.Parent = menuList
+
+local function makeMenuEntry(name: string, text: string, order: number)
+	local btn = Instance.new("TextButton")
+	btn.Name = name
+	btn.Size = UDim2.new(1, 0, 0, 42)
+	btn.LayoutOrder = order
+	btn.BackgroundColor3 = THEME.PanelLight
+	btn.TextColor3 = THEME.Text
+	btn.Font = Enum.Font.GothamBold
+	btn.TextSize = 16
+	btn.Text = text
+	btn.Parent = menuList
+	corner(btn, 8)
+	return btn
+end
+
+-- These keep their original variable names + handlers; only their home moved.
+local museumButton       = makeMenuEntry("MuseumButton", "🏛 Expand Museum", 1)
+local collectionButton   = makeMenuEntry("CollectionButton", "📖 Collection", 2)
+local achievementsButton = makeMenuEntry("AchievementsButton", "Achievements", 3)
+local leaderboardButton  = makeMenuEntry("LeaderboardButton", "Leaderboard", 4)
+local prestigeButton     = makeMenuEntry("PrestigeButton", "Prestige", 5)
+local visitButton        = makeMenuEntry("VisitButton", "👥 Visit Museums", 6)
+local shopButton         = makeMenuEntry("ShopButton", "🛒 Shop", 7)
 
 -- Daily reward button (top-right, highlights when claimable)
 local dailyButton = Instance.new("TextButton")
@@ -694,6 +754,56 @@ achLayout.SortOrder = Enum.SortOrder.LayoutOrder
 achLayout.Parent = achScroll
 
 -- =============================================
+--  SHOP PANEL
+-- =============================================
+local shopPanel = Instance.new("Frame")
+shopPanel.Name = "ShopPanel"
+shopPanel.Size = UDim2.new(0, 460, 0, 460)
+shopPanel.Position = UDim2.new(0.5, -230, 0.5, -230)
+shopPanel.BackgroundColor3 = THEME.Panel
+shopPanel.BackgroundTransparency = 0.05
+shopPanel.Visible = false
+shopPanel.Parent = screenGui
+corner(shopPanel, 12)
+
+local shopTitle = Instance.new("TextLabel")
+shopTitle.Size = UDim2.new(1, -60, 0, 44)
+shopTitle.Position = UDim2.new(0, 16, 0, 8)
+shopTitle.BackgroundTransparency = 1
+shopTitle.TextColor3 = THEME.Gold
+shopTitle.Font = Enum.Font.GothamBold
+shopTitle.TextSize = 22
+shopTitle.TextXAlignment = Enum.TextXAlignment.Left
+shopTitle.Text = "Shop"
+shopTitle.Parent = shopPanel
+
+local shopClose = Instance.new("TextButton")
+shopClose.Size = UDim2.new(0, 36, 0, 36)
+shopClose.Position = UDim2.new(1, -44, 0, 10)
+shopClose.BackgroundColor3 = THEME.Bad
+shopClose.TextColor3 = Color3.fromRGB(255, 255, 255)
+shopClose.Font = Enum.Font.GothamBold
+shopClose.TextSize = 20
+shopClose.Text = "X"
+shopClose.Parent = shopPanel
+corner(shopClose, 8)
+
+local shopScroll = Instance.new("ScrollingFrame")
+shopScroll.Size = UDim2.new(1, -24, 1, -64)
+shopScroll.Position = UDim2.new(0, 12, 0, 56)
+shopScroll.BackgroundTransparency = 1
+shopScroll.BorderSizePixel = 0
+shopScroll.ScrollBarThickness = 6
+shopScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+shopScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+shopScroll.Parent = shopPanel
+
+local shopLayout = Instance.new("UIListLayout")
+shopLayout.Padding = UDim.new(0, 8)
+shopLayout.SortOrder = Enum.SortOrder.LayoutOrder
+shopLayout.Parent = shopScroll
+
+-- =============================================
 --  FLOATING TEXT + BANNER HELPERS
 -- =============================================
 local function showFloatingText(text: string, color: Color3, yStart: number?)
@@ -978,6 +1088,20 @@ inventoryButton.Activated:Connect(function()
 	end
 end)
 
+-- ===== Menu open/close =====
+menuButton.Activated:Connect(function()
+	menuPanel.Visible = not menuPanel.Visible
+end)
+menuClose.Activated:Connect(function()
+	menuPanel.Visible = false
+end)
+-- Picking any menu entry closes the menu (its own handler opens the target panel).
+for _, entry in ipairs({ museumButton, collectionButton, achievementsButton, leaderboardButton, prestigeButton, visitButton, shopButton }) do
+	entry.Activated:Connect(function()
+		menuPanel.Visible = false
+	end)
+end
+
 closeButton.Activated:Connect(function()
 	inventoryPanel.Visible = false
 end)
@@ -1205,6 +1329,122 @@ AchievementUnlockedEvent.OnClientEvent:Connect(function(info)
 	showBanner(string.format("Achievement Unlocked: %s   (+%d coins)", info.Name or "?", info.Reward or 0),
 		Color3.fromRGB(40, 40, 20), THEME.Gold, 4)
 	if achPanel.Visible then refreshAchievements() end
+end)
+
+-- ===== Shop =====
+local function shopHeaderRow(text: string, order: number)
+	local row = Instance.new("TextLabel")
+	row.Size = UDim2.new(1, -6, 0, 26)
+	row.LayoutOrder = order
+	row.BackgroundTransparency = 1
+	row.TextColor3 = THEME.Gold
+	row.Font = Enum.Font.GothamBold
+	row.TextSize = 16
+	row.TextXAlignment = Enum.TextXAlignment.Left
+	row.Text = text
+	row.Parent = shopScroll
+end
+
+local function shopItemRow(name: string, desc: string, btnText: string, btnColor: Color3, enabled: boolean, order: number, onBuy)
+	local row = Instance.new("Frame")
+	row.Size = UDim2.new(1, -6, 0, 60)
+	row.LayoutOrder = order
+	row.BackgroundColor3 = THEME.PanelLight
+	corner(row, 8)
+	padding(row, 8)
+
+	local nameLabel = Instance.new("TextLabel")
+	nameLabel.Size = UDim2.new(1, -110, 0, 20)
+	nameLabel.BackgroundTransparency = 1
+	nameLabel.Font = Enum.Font.GothamBold
+	nameLabel.TextSize = 16
+	nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+	nameLabel.TextColor3 = THEME.Text
+	nameLabel.Text = name
+	nameLabel.Parent = row
+
+	local descLabel = Instance.new("TextLabel")
+	descLabel.Size = UDim2.new(1, -110, 0, 18)
+	descLabel.Position = UDim2.new(0, 0, 0, 22)
+	descLabel.BackgroundTransparency = 1
+	descLabel.Font = Enum.Font.Gotham
+	descLabel.TextSize = 12
+	descLabel.TextWrapped = true
+	descLabel.TextXAlignment = Enum.TextXAlignment.Left
+	descLabel.TextColor3 = Color3.fromRGB(180, 180, 190)
+	descLabel.Text = desc
+	descLabel.Parent = row
+
+	local btn = Instance.new("TextButton")
+	btn.Size = UDim2.new(0, 96, 0, 38)
+	btn.Position = UDim2.new(1, -100, 0.5, -19)
+	btn.BackgroundColor3 = btnColor
+	btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+	btn.Font = Enum.Font.GothamBold
+	btn.TextSize = 14
+	btn.Text = btnText
+	btn.AutoButtonColor = enabled
+	corner(btn, 6)
+	if enabled and onBuy then
+		btn.Activated:Connect(onBuy)
+	end
+	btn.Parent = row
+
+	row.Parent = shopScroll
+end
+
+local function refreshShop()
+	for _, child in ipairs(shopScroll:GetChildren()) do
+		if child:IsA("Frame") or child:IsA("TextLabel") then child:Destroy() end
+	end
+	local shop = GetShopRF:InvokeServer()
+	if not shop then return end
+	local order = 0
+
+	order += 1; shopHeaderRow("Game Passes (permanent)", order)
+	for _, p in ipairs(shop.Passes) do
+		order += 1
+		if p.Owned then
+			shopItemRow(p.Name, p.Description, "Owned", THEME.Good, false, order, nil)
+		elseif p.Configured then
+			shopItemRow(p.Name, p.Description, "Buy", THEME.Accent, true, order, function()
+				MarketplaceService:PromptGamePassPurchase(player, p.GamePassId)
+			end)
+		else
+			shopItemRow(p.Name, p.Description, "Soon", Color3.fromRGB(60, 58, 70), false, order, nil)
+		end
+	end
+
+	order += 1; shopHeaderRow("Coins", order)
+	for _, p in ipairs(shop.Products) do
+		order += 1
+		if p.Configured then
+			shopItemRow(p.Name, p.Description, "Buy", THEME.Gold, true, order, function()
+				MarketplaceService:PromptProductPurchase(player, p.ProductId)
+			end)
+		else
+			shopItemRow(p.Name, p.Description, "Soon", Color3.fromRGB(60, 58, 70), false, order, nil)
+		end
+	end
+end
+
+shopButton.Activated:Connect(function()
+	inventoryPanel.Visible = false
+	collectionPanel.Visible = false
+	leaderboardPanel.Visible = false
+	prestigePanel.Visible = false
+	achPanel.Visible = false
+	shopPanel.Visible = not shopPanel.Visible
+	if shopPanel.Visible then refreshShop() end
+end)
+
+shopClose.Activated:Connect(function()
+	shopPanel.Visible = false
+end)
+
+-- Refresh the shop after a pass purchase (Buy -> Owned)
+MarketplaceService.PromptGamePassPurchaseFinished:Connect(function()
+	if shopPanel.Visible then refreshShop() end
 end)
 
 museumButton.Activated:Connect(function()

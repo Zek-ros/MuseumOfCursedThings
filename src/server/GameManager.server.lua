@@ -64,6 +64,9 @@ require(script.Parent.DailyRewardService)
 require(script.Parent.PrestigeService)
 require(script.Parent.AchievementService)
 
+-- Monetization: game passes + developer products.
+require(script.Parent.MonetizationService)
+
 -- First-time onboarding state + completion reward.
 require(script.Parent.TutorialService)
 
