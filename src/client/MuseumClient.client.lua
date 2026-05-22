@@ -209,23 +209,27 @@ local leaveButton = makeActionButton("LeaveExpeditionButton", "🏃 Leave Expedi
 leaveButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 leaveButton.Visible = false
 
--- Top-left navigation between the hub and your museum
-local function makeNavButton(name: string, text: string, order: number)
+-- Top-left navigation between the hub and your museum.
+-- NOTE: y starts at 52 to clear Roblox's own top bar / menu button — at y=16
+-- with IgnoreGuiInset these were hidden behind CoreGui and unclickable.
+local function makeNavButton(name: string, text: string, order: number, color: Color3)
 	local btn = Instance.new("TextButton")
 	btn.Name = name
-	btn.Size = UDim2.new(0, 150, 0, 34)
-	btn.Position = UDim2.new(0, 16, 0, 16 + order * 40)
-	btn.BackgroundColor3 = THEME.PanelLight
-	btn.TextColor3 = THEME.Text
+	btn.Size = UDim2.new(0, 160, 0, 36)
+	btn.Position = UDim2.new(0, 16, 0, 52 + order * 42)
+	btn.BackgroundColor3 = color
+	btn.TextColor3 = Color3.fromRGB(255, 255, 255)
 	btn.Font = Enum.Font.GothamBold
-	btn.TextSize = 14
+	btn.TextSize = 15
 	btn.Text = text
 	btn.Parent = screenGui
 	corner(btn, 8)
 	return btn
 end
-local hubButton = makeNavButton("HubButton", "🌐 Hub", 0)
-local myMuseumButton = makeNavButton("MyMuseumButton", "🏛 My Museum", 1)
+-- Hub is accent-colored so it's unmistakable; this is how you get back to queue.
+local hubButton = makeNavButton("HubButton", "Hub & Queue", 0, THEME.Accent)
+local myMuseumButton = makeNavButton("MyMuseumButton", "My Museum", 1, THEME.PanelLight)
+myMuseumButton.TextColor3 = THEME.Text
 
 -- =============================================
 --  INVENTORY PANEL

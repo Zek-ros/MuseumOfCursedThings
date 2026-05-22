@@ -92,6 +92,11 @@ function MuseumBuilder.Build(origin: CFrame, ownerName: string)
 		Vector3.new(WALL_THICK, WALL_HEIGHT, ROOM_Z),
 		Vector3.new(halfX, wallY, 0), WALL_COLOR, Enum.Material.Concrete)
 
+	-- Roof
+	makePart(origin, model, "Ceiling",
+		Vector3.new(ROOM_X, WALL_THICK, ROOM_Z),
+		Vector3.new(0, WALL_HEIGHT + WALL_THICK / 2, 0), WALL_COLOR, Enum.Material.Concrete)
+
 	-- Ceiling lights: warm point lights spread across the (bigger) room
 	for _, lx in ipairs({ -28, 0, 28 }) do
 		local fixture = makePart(origin, model, "LightFixture",

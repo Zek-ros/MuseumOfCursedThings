@@ -22,7 +22,7 @@ local OpenQueueEvent  = RemoteEvents:WaitForChild("OpenQueue")
 local HubService = {}
 
 local HUB_ORIGIN = CFrame.new(0, 0, 600)
-local QUEUE_COUNTDOWN = 20
+local QUEUE_COUNTDOWN = 15
 
 -- Valid map ids + display names
 local mapNames = {}
@@ -124,12 +124,18 @@ function HubService.JoinQueue(player: Player, mapId: string)
 	end
 
 	local q = queues[mapId]
-	if not q then
+	local isNew = (q == nil)
+	if isNew then
 		q = { Members = {}, EndsAt = os.clock() + QUEUE_COUNTDOWN }
 		queues[mapId] = q
+	end
+	-- Add the player BEFORE starting the countdown loop. task.spawn runs the
+	-- loop synchronously up to its first wait; if Members were still empty it
+	-- would immediately cancel the queue.
+	q.Members[player] = true
+	if isNew then
 		runCountdown(mapId)
 	end
-	q.Members[player] = true
 	broadcast(mapId, math.max(0, math.ceil(q.EndsAt - os.clock())))
 	return true, "Queued"
 end

@@ -51,7 +51,8 @@ local function makeNameLabel(parent: Instance, text: string, color: Color3, offs
 	local billboard = Instance.new("BillboardGui")
 	billboard.Size = UDim2.new(0, 150, 0, 36)
 	billboard.StudsOffset = Vector3.new(0, offsetY, 0)
-	billboard.AlwaysOnTop = true
+	billboard.AlwaysOnTop = false
+	billboard.MaxDistance = 60
 	local label = Instance.new("TextLabel")
 	label.Size = UDim2.fromScale(1, 1)
 	label.BackgroundTransparency = 1

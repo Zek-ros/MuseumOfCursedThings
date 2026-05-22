@@ -38,7 +38,7 @@ local function floatingLabel(museum, cframe: CFrame, text: string, color: Color3
 
 	local billboard = Instance.new("BillboardGui")
 	billboard.Size = UDim2.new(0, 240, 0, 50)
-	billboard.AlwaysOnTop = true
+	billboard.AlwaysOnTop = false
 	local label = Instance.new("TextLabel")
 	label.Size = UDim2.fromScale(1, 1)
 	label.BackgroundTransparency = 1
@@ -118,7 +118,7 @@ local function teleportCone(_player, museum)
 		local billboard = Instance.new("BillboardGui")
 		billboard.Size = UDim2.new(0, 80, 0, 80)
 		billboard.StudsOffset = Vector3.new(0, 3, 0)
-		billboard.AlwaysOnTop = true
+		billboard.AlwaysOnTop = false
 		local label = Instance.new("TextLabel")
 		label.Size = UDim2.fromScale(1, 1)
 		label.BackgroundTransparency = 1
@@ -165,7 +165,7 @@ local function spawnShadows(_player, museum)
 		local billboard = Instance.new("BillboardGui")
 		billboard.Size = UDim2.new(0, 60, 0, 24)
 		billboard.StudsOffset = Vector3.new(0, 2.4, 0)
-		billboard.AlwaysOnTop = true
+		billboard.AlwaysOnTop = false
 		local eyes = Instance.new("TextLabel")
 		eyes.Size = UDim2.fromScale(1, 1)
 		eyes.BackgroundTransparency = 1
@@ -261,7 +261,7 @@ local function scareVisitors(_player, museum)
 		local billboard = Instance.new("BillboardGui")
 		billboard.Size = UDim2.new(0, 40, 0, 40)
 		billboard.StudsOffset = Vector3.new(0, 2.6, 0)
-		billboard.AlwaysOnTop = true
+		billboard.AlwaysOnTop = false
 		local mark = Instance.new("TextLabel")
 		mark.Size = UDim2.fromScale(1, 1)
 		mark.BackgroundTransparency = 1
@@ -344,7 +344,7 @@ local function moveMannequin(_player, museum)
 		local billboard = Instance.new("BillboardGui")
 		billboard.Size = UDim2.new(0, 50, 0, 24)
 		billboard.StudsOffset = Vector3.new(0, 2.7, 0)
-		billboard.AlwaysOnTop = true
+		billboard.AlwaysOnTop = false
 		local face = Instance.new("TextLabel")
 		face.Size = UDim2.fromScale(1, 1)
 		face.BackgroundTransparency = 1

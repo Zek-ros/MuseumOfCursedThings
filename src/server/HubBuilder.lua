@@ -31,7 +31,8 @@ local function labelOn(part: BasePart, text: string, color: Color3, offsetY: num
 	local billboard = Instance.new("BillboardGui")
 	billboard.Size = UDim2.new(0, 240, 0, 50)
 	billboard.StudsOffset = Vector3.new(0, offsetY, 0)
-	billboard.AlwaysOnTop = true
+	billboard.AlwaysOnTop = false
+	billboard.MaxDistance = 100
 	local label = Instance.new("TextLabel")
 	label.Size = UDim2.fromScale(1, 1)
 	label.BackgroundTransparency = 1
@@ -62,6 +63,10 @@ function HubBuilder.Build(origin: CFrame)
 		Vector3.new(-halfX, wallY, 0), WALL_COLOR, Enum.Material.Concrete)
 	makePart(origin, model, "WallRight", Vector3.new(WALL_THICK, WALL_HEIGHT, HUB_Z),
 		Vector3.new(halfX, wallY, 0), WALL_COLOR, Enum.Material.Concrete)
+
+	-- Roof
+	makePart(origin, model, "Ceiling", Vector3.new(HUB_X, WALL_THICK, HUB_Z),
+		Vector3.new(0, WALL_HEIGHT + WALL_THICK / 2, 0), WALL_COLOR, Enum.Material.Concrete)
 
 	-- Warm lights
 	for _, lx in ipairs({ -20, 20 }) do

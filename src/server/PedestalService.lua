@@ -64,7 +64,8 @@ local function spawnArtifactDisplay(museum, pedestal: BasePart, def)
 		local billboard = Instance.new("BillboardGui")
 		billboard.Size = UDim2.new(0, 200, 0, 40)
 		billboard.StudsOffset = Vector3.new(0, 2.5, 0)
-		billboard.AlwaysOnTop = true
+		billboard.AlwaysOnTop = false -- let walls/roof occlude it
+		billboard.MaxDistance = 55     -- only readable up close
 		local label = Instance.new("TextLabel")
 		label.Size = UDim2.fromScale(1, 1)
 		label.BackgroundTransparency = 1

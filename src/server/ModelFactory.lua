@@ -102,7 +102,8 @@ function ModelFactory.BuildFigure(opts)
 		local billboard = Instance.new("BillboardGui")
 		billboard.Size = UDim2.new(0, 44, 0, 24)
 		billboard.StudsOffset = Vector3.new(0, 0, -0.9)
-		billboard.AlwaysOnTop = true
+		billboard.AlwaysOnTop = false
+		billboard.MaxDistance = 45
 		billboard.Adornee = head
 		local face = Instance.new("TextLabel")
 		face.Size = UDim2.fromScale(1, 1)

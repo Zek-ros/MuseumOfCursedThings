@@ -170,6 +170,10 @@ function ExpeditionBuilder.Build(origin: CFrame, theme)
 	makePart(origin, model, "WallRight", Vector3.new(WALL_THICK, WALL_HEIGHT, EX_Z),
 		Vector3.new(halfX, wallY, 0), wallColor, Enum.Material.Concrete)
 
+	-- Roof
+	makePart(origin, model, "Ceiling", Vector3.new(EX_X, WALL_THICK, EX_Z),
+		Vector3.new(0, WALL_HEIGHT + WALL_THICK / 2, 0), wallColor, Enum.Material.Concrete)
+
 	-- Atmospheric pillars + lights
 	for _, px in ipairs({ -22, 0, 22 }) do
 		for _, pz in ipairs({ -16, 16 }) do
@@ -209,7 +213,8 @@ function ExpeditionBuilder.Build(origin: CFrame, theme)
 	local exBillboard = Instance.new("BillboardGui")
 	exBillboard.Size = UDim2.new(0, 220, 0, 50)
 	exBillboard.StudsOffset = Vector3.new(0, 5, 0)
-	exBillboard.AlwaysOnTop = true
+	exBillboard.AlwaysOnTop = false
+	exBillboard.MaxDistance = 120 -- visible across the map you're in, not beyond
 	local exLabel = Instance.new("TextLabel")
 	exLabel.Size = UDim2.fromScale(1, 1)
 	exLabel.BackgroundTransparency = 1
