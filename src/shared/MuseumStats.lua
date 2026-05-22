@@ -39,7 +39,21 @@ function MuseumStats.CalculateIncome(data): number
 	-- Visitors add a flat bonus on top of artifact income.
 	total += MuseumStats.CalculateVisitorIncome(data)
 
+	-- Prestige: a permanent multiplier earned by rebirthing.
+	total *= MuseumStats.PrestigeMultiplier(data)
+
 	return math.floor(total)
+end
+
+--- Permanent income multiplier from the player's prestige level.
+function MuseumStats.PrestigeMultiplier(data): number
+	local prestige = (data and data.Prestige) or 0
+	return 1 + prestige * Constants.PRESTIGE_INCOME_BONUS
+end
+
+--- Coins required to perform the next prestige (also needs max museum level).
+function MuseumStats.PrestigeCost(prestige: number): number
+	return Constants.PRESTIGE_BASE_COST * ((prestige or 0) + 1)
 end
 
 --- The income multiplier earned from a museum's current danger tier.

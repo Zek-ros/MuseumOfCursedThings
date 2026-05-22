@@ -112,7 +112,8 @@ local function attachPrompt(player: Player, pedestal: BasePart)
 	end)
 end
 
--- Grow the museum's physical pedestals to match its current level.
+-- Match the museum's physical pedestals to its current level (adds on level-up,
+-- removes on prestige reset).
 local function ensurePedestals(player: Player, data, museum)
 	local target = MuseumStats.DisplaySlots(data)
 	while #museum.Pedestals < target do
@@ -120,6 +121,12 @@ local function ensurePedestals(player: Player, data, museum)
 		local pedestal = MuseumBuilder.MakePedestal(museum.Origin, index, museum.Model)
 		attachPrompt(player, pedestal)
 		table.insert(museum.Pedestals, pedestal)
+	end
+	while #museum.Pedestals > target do
+		local pedestal = table.remove(museum.Pedestals)
+		if pedestal then
+			pedestal:Destroy()
+		end
 	end
 end
 

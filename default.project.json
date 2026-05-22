@@ -64,6 +64,9 @@
 			},
 			"DailyRewardService": {
 				"$path": "src/server/DailyRewardService.lua"
+			},
+			"PrestigeService": {
+				"$path": "src/server/PrestigeService.lua"
 			}
 		},
 
@@ -177,6 +180,12 @@
 					"$className": "RemoteFunction"
 				},
 				"ClaimDailyReward": {
+					"$className": "RemoteFunction"
+				},
+				"GetPrestigeInfo": {
+					"$className": "RemoteFunction"
+				},
+				"Prestige": {
 					"$className": "RemoteFunction"
 				}
 			}

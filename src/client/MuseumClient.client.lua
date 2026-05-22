@@ -36,6 +36,8 @@ local JoinQueueRF       = RemoteFunctions:WaitForChild("JoinExpeditionQueue")
 local GetLeaderboardsRF = RemoteFunctions:WaitForChild("GetLeaderboards")
 local GetDailyStatusRF  = RemoteFunctions:WaitForChild("GetDailyRewardStatus")
 local ClaimDailyRF      = RemoteFunctions:WaitForChild("ClaimDailyReward")
+local GetPrestigeInfoRF = RemoteFunctions:WaitForChild("GetPrestigeInfo")
+local PrestigeRF        = RemoteFunctions:WaitForChild("Prestige")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Constants = require(Shared:WaitForChild("Constants"))
@@ -207,9 +209,11 @@ local visitButton = makeActionButton("VisitButton", "👥 Visit Museums", THEME.
 visitButton.TextColor3 = THEME.Text
 local leaderboardButton = makeActionButton("LeaderboardButton", "Leaderboard", THEME.PanelLight, 5)
 leaderboardButton.TextColor3 = THEME.Text
+local prestigeButton = makeActionButton("PrestigeButton", "Prestige", THEME.PanelLight, 6)
+prestigeButton.TextColor3 = THEME.Text
 
 -- Shown only while on an expedition
-local leaveButton = makeActionButton("LeaveExpeditionButton", "🏃 Leave Expedition", THEME.Bad, 6)
+local leaveButton = makeActionButton("LeaveExpeditionButton", "🏃 Leave Expedition", THEME.Bad, 7)
 leaveButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 leaveButton.Visible = false
 
@@ -575,6 +579,65 @@ local lbLayout = Instance.new("UIListLayout")
 lbLayout.Padding = UDim.new(0, 4)
 lbLayout.SortOrder = Enum.SortOrder.LayoutOrder
 lbLayout.Parent = lbScroll
+
+-- =============================================
+--  PRESTIGE PANEL
+-- =============================================
+local prestigePanel = Instance.new("Frame")
+prestigePanel.Name = "PrestigePanel"
+prestigePanel.Size = UDim2.new(0, 420, 0, 280)
+prestigePanel.Position = UDim2.new(0.5, -210, 0.5, -140)
+prestigePanel.BackgroundColor3 = THEME.Panel
+prestigePanel.BackgroundTransparency = 0.05
+prestigePanel.Visible = false
+prestigePanel.Parent = screenGui
+corner(prestigePanel, 12)
+
+local prTitle = Instance.new("TextLabel")
+prTitle.Size = UDim2.new(1, -60, 0, 40)
+prTitle.Position = UDim2.new(0, 16, 0, 10)
+prTitle.BackgroundTransparency = 1
+prTitle.TextColor3 = THEME.Accent
+prTitle.Font = Enum.Font.GothamBold
+prTitle.TextSize = 22
+prTitle.TextXAlignment = Enum.TextXAlignment.Left
+prTitle.Text = "Prestige"
+prTitle.Parent = prestigePanel
+
+local prClose = Instance.new("TextButton")
+prClose.Size = UDim2.new(0, 36, 0, 36)
+prClose.Position = UDim2.new(1, -44, 0, 10)
+prClose.BackgroundColor3 = THEME.Bad
+prClose.TextColor3 = Color3.fromRGB(255, 255, 255)
+prClose.Font = Enum.Font.GothamBold
+prClose.TextSize = 20
+prClose.Text = "X"
+prClose.Parent = prestigePanel
+corner(prClose, 8)
+
+local prInfo = Instance.new("TextLabel")
+prInfo.Size = UDim2.new(1, -32, 1, -110)
+prInfo.Position = UDim2.new(0, 16, 0, 52)
+prInfo.BackgroundTransparency = 1
+prInfo.TextColor3 = THEME.Text
+prInfo.Font = Enum.Font.Gotham
+prInfo.TextSize = 15
+prInfo.TextWrapped = true
+prInfo.TextYAlignment = Enum.TextYAlignment.Top
+prInfo.TextXAlignment = Enum.TextXAlignment.Left
+prInfo.Text = ""
+prInfo.Parent = prestigePanel
+
+local prConfirm = Instance.new("TextButton")
+prConfirm.Size = UDim2.new(1, -32, 0, 44)
+prConfirm.Position = UDim2.new(0, 16, 1, -56)
+prConfirm.BackgroundColor3 = THEME.Accent
+prConfirm.TextColor3 = Color3.fromRGB(255, 255, 255)
+prConfirm.Font = Enum.Font.GothamBold
+prConfirm.TextSize = 17
+prConfirm.Text = "Prestige Now"
+prConfirm.Parent = prestigePanel
+corner(prConfirm, 8)
 
 -- =============================================
 --  FLOATING TEXT + BANNER HELPERS
@@ -956,6 +1019,53 @@ dailyButton.Activated:Connect(function()
 	updateDailyButton(status)
 end)
 
+-- ===== Prestige =====
+local PRESTIGE_PCT = math.floor(Constants.PRESTIGE_INCOME_BONUS * 100)
+
+local function refreshPrestige()
+	local info = GetPrestigeInfoRF:InvokeServer()
+	if not info then return end
+	prestigeButton.Text = "Prestige (Lv." .. info.Prestige .. ")"
+	prTitle.Text = "Prestige  -  Level " .. info.Prestige
+	prInfo.Text = string.format(
+		"Income bonus now: +%d%%   (next: +%d%%)\n\nTo prestige you need: Max Museum (Lv.%d) and %d coins.\nYour museum is Lv.%d.\n\nPrestiging RESETS your coins and museum level. You KEEP all your artifacts and collection. In return you gain a permanent +%d%% income.",
+		math.floor((info.Multiplier - 1) * 100),
+		math.floor((info.NextMultiplier - 1) * 100),
+		info.MaxMuseumLevel, info.Cost, info.MuseumLevel, PRESTIGE_PCT)
+	if info.CanPrestige then
+		prConfirm.Text = string.format("Prestige Now  (+%d%% income)", PRESTIGE_PCT)
+		prConfirm.BackgroundColor3 = THEME.Accent
+		prConfirm.AutoButtonColor = true
+	else
+		prConfirm.Text = info.Reason or "Not eligible yet"
+		prConfirm.BackgroundColor3 = Color3.fromRGB(60, 58, 70)
+		prConfirm.AutoButtonColor = false
+	end
+end
+
+prestigeButton.Activated:Connect(function()
+	inventoryPanel.Visible = false
+	collectionPanel.Visible = false
+	leaderboardPanel.Visible = false
+	prestigePanel.Visible = not prestigePanel.Visible
+	if prestigePanel.Visible then refreshPrestige() end
+end)
+
+prClose.Activated:Connect(function()
+	prestigePanel.Visible = false
+end)
+
+prConfirm.Activated:Connect(function()
+	local ok, msg = PrestigeRF:InvokeServer()
+	if ok then
+		showBanner(msg or "Prestiged!", Color3.fromRGB(40, 20, 60), THEME.Accent, 4)
+		prestigePanel.Visible = false
+	elseif msg then
+		showBanner(msg, THEME.Bad, Color3.fromRGB(255, 255, 255), 2.5)
+	end
+	refreshPrestige()
+end)
+
 museumButton.Activated:Connect(function()
 	local ok, msg = UpgradeMuseumRF:InvokeServer()
 	if ok then
@@ -1296,6 +1406,8 @@ task.spawn(function()
 	-- Daily reward button state
 	local status = GetDailyStatusRF:InvokeServer()
 	updateDailyButton(status)
+	-- Prestige button label (shows current level)
+	refreshPrestige()
 end)
 
 print("[Museum of Cursed Things] Client initialized.")

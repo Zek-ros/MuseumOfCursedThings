@@ -104,4 +104,9 @@ Constants.MAX_MUSEUM_LEVEL = 5      -- level cap
 Constants.MAX_PEDESTALS = 18        -- = BASE + (MAX_LEVEL-1)*PER_LEVEL
 Constants.MUSEUM_UPGRADE_BASE_COST = 1000 -- cost = BASE * currentLevel
 
+-- Prestige / rebirth: at max museum level + enough coins you can rebirth, resetting
+-- coins + museum level (keeping artifacts) for a permanent income multiplier.
+Constants.PRESTIGE_INCOME_BONUS = 0.2      -- +20% income per prestige level
+Constants.PRESTIGE_BASE_COST = 25000       -- cost = BASE * (prestige + 1); also needs max museum level
+
 return Constants
