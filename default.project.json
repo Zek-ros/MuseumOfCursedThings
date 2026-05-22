@@ -67,6 +67,9 @@
 			},
 			"PrestigeService": {
 				"$path": "src/server/PrestigeService.lua"
+			},
+			"AchievementService": {
+				"$path": "src/server/AchievementService.lua"
 			}
 		},
 
@@ -86,6 +89,9 @@
 				"ExpeditionMaps": {
 					"$path": "src/shared/ExpeditionMaps.lua"
 				},
+				"AchievementData": {
+					"$path": "src/shared/AchievementData.lua"
+				},
 				"SoundData": {
 					"$path": "src/shared/SoundData.lua"
 				}
@@ -102,6 +108,9 @@
 					"$className": "RemoteEvent"
 				},
 				"MuseumChanged": {
+					"$className": "RemoteEvent"
+				},
+				"AchievementUnlocked": {
 					"$className": "RemoteEvent"
 				},
 				"LeaveExpedition": {
@@ -186,6 +195,9 @@
 					"$className": "RemoteFunction"
 				},
 				"Prestige": {
+					"$className": "RemoteFunction"
+				},
+				"GetAchievements": {
 					"$className": "RemoteFunction"
 				}
 			}

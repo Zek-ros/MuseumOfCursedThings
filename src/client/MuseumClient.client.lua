@@ -16,6 +16,7 @@ local IncomeEvent        = RemoteEvents:WaitForChild("IncomeReceived")
 local ChaosEventRemote   = RemoteEvents:WaitForChild("ChaosEvent")
 local OpenInventoryEvent  = RemoteEvents:WaitForChild("OpenInventory")
 local MuseumChangedEvent  = RemoteEvents:WaitForChild("MuseumChanged")
+local AchievementUnlockedEvent = RemoteEvents:WaitForChild("AchievementUnlocked")
 local LeaveExpeditionEvent = RemoteEvents:WaitForChild("LeaveExpedition")
 local ExpeditionStateEvent = RemoteEvents:WaitForChild("ExpeditionState")
 local QueueStateEvent      = RemoteEvents:WaitForChild("QueueState")
@@ -38,6 +39,7 @@ local GetDailyStatusRF  = RemoteFunctions:WaitForChild("GetDailyRewardStatus")
 local ClaimDailyRF      = RemoteFunctions:WaitForChild("ClaimDailyReward")
 local GetPrestigeInfoRF = RemoteFunctions:WaitForChild("GetPrestigeInfo")
 local PrestigeRF        = RemoteFunctions:WaitForChild("Prestige")
+local GetAchievementsRF = RemoteFunctions:WaitForChild("GetAchievements")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Constants = require(Shared:WaitForChild("Constants"))
@@ -211,9 +213,11 @@ local leaderboardButton = makeActionButton("LeaderboardButton", "Leaderboard", T
 leaderboardButton.TextColor3 = THEME.Text
 local prestigeButton = makeActionButton("PrestigeButton", "Prestige", THEME.PanelLight, 6)
 prestigeButton.TextColor3 = THEME.Text
+local achievementsButton = makeActionButton("AchievementsButton", "Achievements", THEME.PanelLight, 7)
+achievementsButton.TextColor3 = THEME.Text
 
 -- Shown only while on an expedition
-local leaveButton = makeActionButton("LeaveExpeditionButton", "🏃 Leave Expedition", THEME.Bad, 7)
+local leaveButton = makeActionButton("LeaveExpeditionButton", "🏃 Leave Expedition", THEME.Bad, 8)
 leaveButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 leaveButton.Visible = false
 
@@ -640,6 +644,56 @@ prConfirm.Parent = prestigePanel
 corner(prConfirm, 8)
 
 -- =============================================
+--  ACHIEVEMENTS PANEL
+-- =============================================
+local achPanel = Instance.new("Frame")
+achPanel.Name = "AchievementsPanel"
+achPanel.Size = UDim2.new(0, 480, 0, 470)
+achPanel.Position = UDim2.new(0.5, -240, 0.5, -235)
+achPanel.BackgroundColor3 = THEME.Panel
+achPanel.BackgroundTransparency = 0.05
+achPanel.Visible = false
+achPanel.Parent = screenGui
+corner(achPanel, 12)
+
+local achTitle = Instance.new("TextLabel")
+achTitle.Size = UDim2.new(1, -60, 0, 44)
+achTitle.Position = UDim2.new(0, 16, 0, 8)
+achTitle.BackgroundTransparency = 1
+achTitle.TextColor3 = THEME.Text
+achTitle.Font = Enum.Font.GothamBold
+achTitle.TextSize = 22
+achTitle.TextXAlignment = Enum.TextXAlignment.Left
+achTitle.Text = "Achievements"
+achTitle.Parent = achPanel
+
+local achClose = Instance.new("TextButton")
+achClose.Size = UDim2.new(0, 36, 0, 36)
+achClose.Position = UDim2.new(1, -44, 0, 10)
+achClose.BackgroundColor3 = THEME.Bad
+achClose.TextColor3 = Color3.fromRGB(255, 255, 255)
+achClose.Font = Enum.Font.GothamBold
+achClose.TextSize = 20
+achClose.Text = "X"
+achClose.Parent = achPanel
+corner(achClose, 8)
+
+local achScroll = Instance.new("ScrollingFrame")
+achScroll.Size = UDim2.new(1, -24, 1, -64)
+achScroll.Position = UDim2.new(0, 12, 0, 56)
+achScroll.BackgroundTransparency = 1
+achScroll.BorderSizePixel = 0
+achScroll.ScrollBarThickness = 6
+achScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+achScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+achScroll.Parent = achPanel
+
+local achLayout = Instance.new("UIListLayout")
+achLayout.Padding = UDim.new(0, 8)
+achLayout.SortOrder = Enum.SortOrder.LayoutOrder
+achLayout.Parent = achScroll
+
+-- =============================================
 --  FLOATING TEXT + BANNER HELPERS
 -- =============================================
 local function showFloatingText(text: string, color: Color3, yStart: number?)
@@ -980,6 +1034,15 @@ local function refreshLeaderboard()
 	for i, e in ipairs(info.TopCollection) do
 		order += 1; lbEntryRow(string.format("%d.  %s  -  %s / 25", i, e.Name, tostring(e.Value)), order)
 	end
+
+	order += 1; lbHeaderRow("Top Prestige  -  rebirths", order)
+	local prestige = info.TopPrestige or {}
+	if #prestige == 0 then
+		order += 1; lbEntryRow("(no entries yet)", order)
+	end
+	for i, e in ipairs(prestige) do
+		order += 1; lbEntryRow(string.format("%d.  %s  -  Lv.%s", i, e.Name, tostring(e.Value)), order)
+	end
 end
 
 leaderboardButton.Activated:Connect(function()
@@ -1064,6 +1127,84 @@ prConfirm.Activated:Connect(function()
 		showBanner(msg, THEME.Bad, Color3.fromRGB(255, 255, 255), 2.5)
 	end
 	refreshPrestige()
+end)
+
+-- ===== Achievements =====
+local function buildAchievementRow(entry, order: number)
+	local row = Instance.new("Frame")
+	row.Size = UDim2.new(1, -6, 0, 56)
+	row.BackgroundColor3 = entry.Claimed and Color3.fromRGB(28, 44, 32) or THEME.PanelLight
+	row.LayoutOrder = order
+	corner(row, 8)
+	padding(row, 8)
+
+	local nameLabel = Instance.new("TextLabel")
+	nameLabel.Size = UDim2.new(1, 0, 0, 18)
+	nameLabel.BackgroundTransparency = 1
+	nameLabel.Font = Enum.Font.GothamBold
+	nameLabel.TextSize = 15
+	nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+	nameLabel.TextColor3 = entry.Claimed and THEME.Good or THEME.Text
+	nameLabel.Text = (entry.Claimed and "[DONE]  " or "") .. entry.Name .. "  (+" .. entry.Reward .. ")"
+	nameLabel.Parent = row
+
+	local descLabel = Instance.new("TextLabel")
+	descLabel.Size = UDim2.new(1, 0, 0, 14)
+	descLabel.Position = UDim2.new(0, 0, 0, 20)
+	descLabel.BackgroundTransparency = 1
+	descLabel.Font = Enum.Font.Gotham
+	descLabel.TextSize = 12
+	descLabel.TextXAlignment = Enum.TextXAlignment.Left
+	descLabel.TextColor3 = Color3.fromRGB(175, 175, 185)
+	descLabel.Text = entry.Description
+	descLabel.Parent = row
+
+	local progLabel = Instance.new("TextLabel")
+	progLabel.Size = UDim2.new(1, 0, 0, 14)
+	progLabel.Position = UDim2.new(0, 0, 0, 36)
+	progLabel.BackgroundTransparency = 1
+	progLabel.Font = Enum.Font.GothamMedium
+	progLabel.TextSize = 12
+	progLabel.TextXAlignment = Enum.TextXAlignment.Left
+	progLabel.TextColor3 = entry.Claimed and THEME.Good or THEME.Gold
+	local current = math.min(entry.Current, entry.Goal)
+	progLabel.Text = entry.Claimed and "Unlocked" or string.format("Progress: %d / %d", current, entry.Goal)
+	progLabel.Parent = row
+
+	row.Parent = achScroll
+end
+
+local function refreshAchievements()
+	for _, child in ipairs(achScroll:GetChildren()) do
+		if child:IsA("Frame") then child:Destroy() end
+	end
+	local list = GetAchievementsRF:InvokeServer()
+	if not list then return end
+	local done = 0
+	for i, entry in ipairs(list) do
+		if entry.Claimed then done += 1 end
+		buildAchievementRow(entry, i)
+	end
+	achTitle.Text = string.format("Achievements  (%d / %d)", done, #list)
+end
+
+achievementsButton.Activated:Connect(function()
+	inventoryPanel.Visible = false
+	collectionPanel.Visible = false
+	leaderboardPanel.Visible = false
+	prestigePanel.Visible = false
+	achPanel.Visible = not achPanel.Visible
+	if achPanel.Visible then refreshAchievements() end
+end)
+
+achClose.Activated:Connect(function()
+	achPanel.Visible = false
+end)
+
+AchievementUnlockedEvent.OnClientEvent:Connect(function(info)
+	showBanner(string.format("Achievement Unlocked: %s   (+%d coins)", info.Name or "?", info.Reward or 0),
+		Color3.fromRGB(40, 40, 20), THEME.Gold, 4)
+	if achPanel.Visible then refreshAchievements() end
 end)
 
 museumButton.Activated:Connect(function()

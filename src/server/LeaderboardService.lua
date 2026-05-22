@@ -17,12 +17,13 @@ local TOP_N = 10
 local REFRESH_RATE = 60
 
 -- Try to acquire ordered stores (needs a published place + API access).
-local earnedStore, collectionStore
+local earnedStore, collectionStore, prestigeStore
 local available = false
 do
 	local ok = pcall(function()
 		earnedStore = DataStoreService:GetOrderedDataStore("MuseumTopEarned_v1")
 		collectionStore = DataStoreService:GetOrderedDataStore("MuseumTopCollection_v1")
+		prestigeStore = DataStoreService:GetOrderedDataStore("MuseumTopPrestige_v1")
 	end)
 	available = ok and earnedStore ~= nil
 	if not available then
@@ -32,6 +33,7 @@ end
 
 local cachedEarned = {}
 local cachedCollection = {}
+local cachedPrestige = {}
 local nameCache = {} -- [userId] = name
 
 local function discoveredCount(data): number
@@ -65,6 +67,9 @@ local function savePlayer(player: Player)
 	pcall(function()
 		collectionStore:SetAsync(key, discoveredCount(data))
 	end)
+	pcall(function()
+		prestigeStore:SetAsync(key, data.Prestige or 0)
+	end)
 end
 
 local function fetchTop(store): { { Name: string, Value: number } }
@@ -87,25 +92,28 @@ local function fetchTop(store): { { Name: string, Value: number } }
 end
 
 local function rankCurrentServer()
-	local earned, collection = {}, {}
+	local earned, collection, prestige = {}, {}, {}
 	for _, player in ipairs(Players:GetPlayers()) do
 		local data = DataService.GetData(player)
 		if data then
 			table.insert(earned, { Name = player.Name, Value = math.floor(data.Statistics.TotalEarned or 0) })
 			table.insert(collection, { Name = player.Name, Value = discoveredCount(data) })
+			table.insert(prestige, { Name = player.Name, Value = data.Prestige or 0 })
 		end
 	end
 	table.sort(earned, function(a, b) return a.Value > b.Value end)
 	table.sort(collection, function(a, b) return a.Value > b.Value end)
-	return earned, collection
+	table.sort(prestige, function(a, b) return a.Value > b.Value end)
+	return earned, collection, prestige
 end
 
 local function refresh()
 	if available then
 		cachedEarned = fetchTop(earnedStore)
 		cachedCollection = fetchTop(collectionStore)
+		cachedPrestige = fetchTop(prestigeStore)
 	else
-		cachedEarned, cachedCollection = rankCurrentServer()
+		cachedEarned, cachedCollection, cachedPrestige = rankCurrentServer()
 	end
 end
 
@@ -130,6 +138,7 @@ RemoteFunctions:WaitForChild("GetLeaderboards").OnServerInvoke = function()
 	return {
 		TopEarned = cachedEarned,
 		TopCollection = cachedCollection,
+		TopPrestige = cachedPrestige,
 		Global = available,
 	}
 end

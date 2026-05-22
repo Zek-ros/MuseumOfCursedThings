@@ -60,8 +60,9 @@ require(script.Parent.HubService)
 require(script.Parent.LeaderboardService)
 require(script.Parent.DailyRewardService)
 
--- Endgame: prestige / rebirth.
+-- Endgame: prestige / rebirth + achievements.
 require(script.Parent.PrestigeService)
+require(script.Parent.AchievementService)
 
 -- First-time onboarding state + completion reward.
 require(script.Parent.TutorialService)
