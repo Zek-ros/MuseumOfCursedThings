@@ -48,6 +48,14 @@ local function loadTemplate(numericId: number)
 	if ok and loaded then
 		local model = loaded:FindFirstChildWhichIsA("Model") or loaded
 		model.Parent = nil
+		-- Strip bundled Toolbox scripts: we drive/animate these models ourselves,
+		-- and their built-in AI / Animate / teleporter scripts only spam errors
+		-- (missing deps, private animation assets, network ownership on anchored parts).
+		for _, d in ipairs(model:GetDescendants()) do
+			if d:IsA("BaseScript") then
+				d:Destroy()
+			end
+		end
 		cache[numericId] = model
 		return model
 	end

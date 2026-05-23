@@ -91,6 +91,27 @@ local function worldAABB(model): (Vector3, Vector3)
 	return minv, maxv
 end
 
+-- Some Store "portal" assets are actually two identical copies side by side. If
+-- one horizontal axis is far longer than the other, delete the parts on the far
+-- half so a single copy remains.
+local function keepOneHalf(model)
+	local cf, size = model:GetBoundingBox()
+	local maxH = math.max(size.X, size.Z)
+	local minH = math.min(size.X, size.Z)
+	if maxH < minH * 2.2 then
+		return -- roughly square footprint → a single object, leave it alone
+	end
+	local alongZ = size.Z >= size.X
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("BasePart") then
+			local lp = cf:PointToObjectSpace(d.Position)
+			if (alongZ and lp.Z or lp.X) > 0 then
+				d:Destroy()
+			end
+		end
+	end
+end
+
 -- Stand a prop flush against the LEFT wall (local x = wallLocalX): its nearest
 -- face touches the wall, its base sits on the floor, centered along z = localZ.
 local function placeAgainstWall(origin: CFrame, model, wallLocalX: number, localZ: number, yaw: number?)
@@ -208,7 +229,8 @@ function MuseumBuilder.Build(origin: CFrame, ownerName: string)
 	-- Use the Store portal model if it loads; otherwise the original purple frame.
 	local portalModel = ModelFactory.TryLoad(HUB_PORTAL_MODEL_ID)
 	if portalModel then
-		placeAgainstWall(origin, portalModel, -halfX, 0, math.rad(90)) -- flush to the left wall
+		keepOneHalf(portalModel) -- this asset is two portals; keep just one
+		placeAgainstWall(origin, portalModel, -halfX, 0, 0) -- flush to the left wall, facing the room
 		portalModel.Parent = model
 	else
 		makePart(origin, model, "PortalFrame", Vector3.new(1, 11, 1), Vector3.new(px, 5.5, -3.5), portalColor, Enum.Material.Neon)
