@@ -1643,7 +1643,7 @@ local function removeFlashlight()
 	end
 end
 
-local function enterDarkness(fogEnd: number?)
+local function enterDarkness(fogEnd: number?, fogColor: Color3?, ambient: Color3?)
 	if not savedLighting then
 		savedLighting = {
 			Ambient = Lighting.Ambient,
@@ -1656,13 +1656,14 @@ local function enterDarkness(fogEnd: number?)
 		}
 	end
 	inDarkness = true
-	Lighting.Ambient = Color3.fromRGB(6, 6, 10)
-	Lighting.OutdoorAmbient = Color3.fromRGB(6, 6, 10)
+	-- Per-maze color wash (kept dark, but strongly tinted to the maze's theme).
+	Lighting.Ambient = ambient or Color3.fromRGB(6, 6, 10)
+	Lighting.OutdoorAmbient = ambient or Color3.fromRGB(6, 6, 10)
 	Lighting.Brightness = 0
 	Lighting.ClockTime = 0
-	Lighting.FogColor = Color3.fromRGB(0, 0, 0)
+	-- Per-maze haze color + view distance (each maze sends its own).
+	Lighting.FogColor = fogColor or Color3.fromRGB(0, 0, 0)
 	Lighting.FogStart = 20
-	-- Per-maze view distance: darker, scarier mazes send a smaller fog end.
 	Lighting.FogEnd = fogEnd or 75
 	attachFlashlight()
 end
@@ -1697,12 +1698,15 @@ ExpeditionStateEvent.OnClientEvent:Connect(function(info)
 		expeditionButton.Visible = false
 		leaveButton.Visible = true
 		queuePanel.Visible = false -- the queue launched
-		enterDarkness(info.Fog)
+		enterDarkness(info.Fog, info.FogColor, info.Ambient)
 		showBanner("It's pitch black in here. Use your flashlight to find an artifact, then carry it to the green EXTRACTION pad!",
 			Color3.fromRGB(20, 40, 30), Color3.fromRGB(160, 255, 200), 4.5)
 	elseif state == "Carrying" then
-		showBanner(string.format("Picked up %s — get to the EXTRACTION pad!", info.ArtifactName or "an artifact"),
-			Color3.fromRGB(30, 30, 50), Color3.fromRGB(220, 220, 255), 3)
+		showBanner(string.format("Picked up %s — get it to EXTRACTION! (Find a better one? Grab it to swap.)", info.ArtifactName or "an artifact"),
+			Color3.fromRGB(30, 30, 50), Color3.fromRGB(220, 220, 255), 3.5)
+	elseif state == "Swapped" then
+		showBanner(string.format("Swapped! Now carrying %s — your old artifact is on the ground here.", info.ArtifactName or "it"),
+			Color3.fromRGB(30, 40, 55), Color3.fromRGB(190, 220, 255), 3)
 	elseif state == "AlreadyCarrying" then
 		showBanner("You can only carry one artifact at a time!", THEME.PanelLight, THEME.Text, 2)
 	elseif state == "Stolen" then

@@ -22,7 +22,7 @@ local MonsterService = {}
 
 local MONSTER_MODEL_ID = 8482062232
 
-local CATCH_RADIUS    = 6
+local CATCH_RADIUS    = 3.5  -- must be right on top of you to steal (not just "near")
 local SPAWN_DISTANCE  = 34
 local PATROL_SPEED    = 6    -- wandering (a slow stalk)
 local PATROL_CHASE    = 9    -- chasing (player walks 16 — always escapable)

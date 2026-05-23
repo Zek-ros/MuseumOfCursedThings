@@ -22,6 +22,13 @@ return {
 		Pickups = 8,
 		Fog = 95,
 		Luck = 1,
+		-- Look: cold blue steel — bright blue emergency glow.
+		Floor = Color3.fromRGB(34, 46, 78),
+		Wall = Color3.fromRGB(24, 40, 80),
+		Crate = Color3.fromRGB(70, 64, 48),
+		WallMaterial = Enum.Material.Concrete,
+		FogColor = Color3.fromRGB(12, 26, 60),
+		Ambient = Color3.fromRGB(10, 18, 42),
 	},
 	{
 		Id = "warren",
@@ -33,6 +40,13 @@ return {
 		Pickups = 7,
 		Fog = 65,
 		Luck = 2,
+		-- Look: toxic green burrow — sickly fungal glow.
+		Floor = Color3.fromRGB(30, 44, 24),
+		Wall = Color3.fromRGB(26, 46, 24),
+		Crate = Color3.fromRGB(58, 50, 32),
+		WallMaterial = Enum.Material.Slate,
+		FogColor = Color3.fromRGB(14, 42, 16),
+		Ambient = Color3.fromRGB(14, 34, 14),
 	},
 	{
 		Id = "sprawl",
@@ -44,5 +58,12 @@ return {
 		Pickups = 6,
 		Fog = 45,
 		Luck = 3,
+		-- Look: blood-dark rock — burning red glow.
+		Floor = Color3.fromRGB(58, 24, 26),
+		Wall = Color3.fromRGB(54, 20, 22),
+		Crate = Color3.fromRGB(58, 38, 34),
+		WallMaterial = Enum.Material.Rock,
+		FogColor = Color3.fromRGB(60, 10, 12),
+		Ambient = Color3.fromRGB(46, 10, 12),
 	},
 }

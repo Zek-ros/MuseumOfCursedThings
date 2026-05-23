@@ -15,6 +15,7 @@ local MuseumBuilder = {}
 -- Real Store models for the solid props (nil = keep the procedural version).
 local PEDESTAL_MODEL_ID = 5057773836
 local HUB_PORTAL_MODEL_ID = 18506880748
+local PEDESTAL_LIGHT_MODEL_ID = 10502699722 -- ceiling fixture that beams down on each pedestal
 
 -- Room dimensions (studs) — sized to fit MAX_PEDESTALS in rows.
 local ROOM_X = 84
@@ -125,11 +126,54 @@ local function placeAgainstWall(origin: CFrame, model, wallLocalX: number, local
 	model:PivotTo(model:GetPivot() + delta)
 end
 
+-- Hang the light fixture flush under the ceiling, centered above (localX, localZ).
+local function mountCeiling(origin: CFrame, model, localX: number, localZ: number, ceilingY: number)
+	local anchorPos = (origin * CFrame.new(localX, ceilingY, localZ)).Position
+	model:PivotTo(CFrame.new(anchorPos))
+	local minv, maxv = worldAABB(model)
+	model:PivotTo(model:GetPivot() + Vector3.new(
+		anchorPos.X - (minv.X + maxv.X) / 2,
+		anchorPos.Y - maxv.Y, -- top flush to the ceiling
+		anchorPos.Z - (minv.Z + maxv.Z) / 2))
+end
+
+-- A ceiling fixture + downward beam over a pedestal slot, parented to `ped`
+-- (so it's cleaned up when the pedestal is removed on prestige).
+local function addPedestalLight(origin: CFrame, lp: Vector3, ped: BasePart)
+	local ceilingY = WALL_HEIGHT - 0.5
+
+	local fixture = ModelFactory.TryLoad(PEDESTAL_LIGHT_MODEL_ID)
+	if fixture then
+		-- Drop the fixture's own (sideways-aimed) light; our beam below points down.
+		for _, d in ipairs(fixture:GetDescendants()) do
+			if d:IsA("Light") then
+				d:Destroy()
+			end
+		end
+		mountCeiling(origin, fixture, lp.X, lp.Z, ceilingY)
+		fixture.Parent = ped
+	end
+
+	-- Invisible source high above the pedestal, beaming straight down on the artifact.
+	local src = makePart(origin, ped, "PedestalLight", Vector3.new(0.4, 0.4, 0.4),
+		Vector3.new(lp.X, ceilingY - 2, lp.Z), Color3.fromRGB(20, 20, 20), Enum.Material.SmoothPlastic)
+	src.Transparency = 1
+	src.CanCollide = false
+	local beam = Instance.new("SpotLight")
+	beam.Face = Enum.NormalId.Bottom
+	beam.Angle = 50
+	beam.Range = 22
+	beam.Brightness = 2.5
+	beam.Color = Color3.fromRGB(255, 244, 214)
+	beam.Parent = src
+end
+
 --- Create a single pedestal at slot `index`, parented to `parent`. Returns the
 -- part PedestalService treats as the pedestal (its prompt + hover anchor). If a
 -- Store model is configured it becomes the visual; otherwise a marble block.
 function MuseumBuilder.MakePedestal(origin: CFrame, index: number, parent: Instance)
 	local lp = pedestalLocalPos(index)
+	local ped
 
 	local model = ModelFactory.TryLoad(PEDESTAL_MODEL_ID)
 	if model then
@@ -143,15 +187,17 @@ function MuseumBuilder.MakePedestal(origin: CFrame, index: number, parent: Insta
 		anchor.CanCollide = false
 		anchor:SetAttribute("PedestalIndex", index)
 		model.Parent = anchor -- removing the anchor (on prestige reset) frees the model too
-		return anchor
+		ped = anchor
+	else
+		ped = makePart(origin, parent, "Pedestal",
+			Vector3.new(3, 4, 3),
+			lp,
+			PEDESTAL_COLOR, Enum.Material.Marble)
+		ped:SetAttribute("PedestalIndex", index)
 	end
 
-	local pedestal = makePart(origin, parent, "Pedestal",
-		Vector3.new(3, 4, 3),
-		lp,
-		PEDESTAL_COLOR, Enum.Material.Marble)
-	pedestal:SetAttribute("PedestalIndex", index)
-	return pedestal
+	addPedestalLight(origin, lp, ped)
+	return ped
 end
 
 --- Build a museum at the given origin CFrame (origin = center of floor top).

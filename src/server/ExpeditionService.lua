@@ -78,11 +78,17 @@ end
 
 local spawnRandomPickup -- forward declare (spawnPickup respawns via this)
 
-local function spawnPickup(mapId: string, index: number)
+local function spawnPickup(mapId: string, index: number, forcedId: string?, forcedRarity: string?)
 	local map = maps[mapId]
 	if not map then return end
 
-	local artifactId, rarity = ArtifactService.RollArtifact(map.Luck)
+	-- A specific artifact (e.g. one dropped by a swap) or a fresh random roll.
+	local artifactId, rarity
+	if forcedId then
+		artifactId, rarity = forcedId, forcedRarity
+	else
+		artifactId, rarity = ArtifactService.RollArtifact(map.Luck)
+	end
 	if not artifactId then return end
 	local def = ArtifactData.Artifacts[artifactId]
 	if not def then return end
@@ -123,24 +129,29 @@ local function spawnPickup(mapId: string, index: number)
 
 		prompt.Triggered:Connect(function(triggerPlayer)
 			if not inExpedition[triggerPlayer] then return end
-			if carrying[triggerPlayer] then
-				fireState(triggerPlayer, "AlreadyCarrying")
-				return
-			end
 			if not visual.Parent then return end -- already taken
+
+			local swappingOut = carrying[triggerPlayer]
 			visual:Destroy()
 			map.Pickups[index] = nil
 
+			-- Carry this artifact (AttachCarry replaces any existing carried model).
 			carrying[triggerPlayer] = { ArtifactId = artifactId, Rarity = rarity }
 			ExpeditionService.AttachCarry(triggerPlayer, artifactId, rarity)
-			fireState(triggerPlayer, "Carrying", def.Name)
-			-- The artifact attracts monsters while carried — more/faster for scarier ones.
-			MonsterService.StartHunt(triggerPlayer, def.DangerLevel)
 
-			-- Respawn elsewhere (a random free spot) so locations keep shifting.
-			task.delay(PICKUP_RESPAWN, function()
-				spawnRandomPickup(mapId)
-			end)
+			if swappingOut then
+				-- SWAP: leave the previously-carried artifact here in its place.
+				fireState(triggerPlayer, "Swapped", def.Name)
+				spawnPickup(mapId, index, swappingOut.ArtifactId, swappingOut.Rarity)
+			else
+				fireState(triggerPlayer, "Carrying", def.Name)
+				-- The artifact attracts monsters while carried — more/faster for scarier ones.
+				MonsterService.StartHunt(triggerPlayer, def.DangerLevel)
+				-- Respawn elsewhere (a random free spot) so locations keep shifting.
+				task.delay(PICKUP_RESPAWN, function()
+					spawnRandomPickup(mapId)
+				end)
+			end
 		end)
 	end
 
@@ -173,6 +184,12 @@ function ExpeditionService.AttachCarry(player: Player, artifactId: string, rarit
 	local def = ArtifactData.Artifacts[artifactId]
 
 	local color = rarityColor(rarity)
+
+	-- Replace any existing carried visual (e.g. when swapping artifacts).
+	if carriedPart[player] then
+		carriedPart[player]:Destroy()
+		carriedPart[player] = nil
+	end
 
 	-- Carry the real artifact model, shrunk so it doesn't block your view.
 	local builder = ArtifactModels[artifactId]
@@ -227,6 +244,99 @@ local function removeCarry(player: Player)
 end
 
 -- =============================================
+--  FLASHLIGHT (held in hand on expeditions)
+-- =============================================
+local FLASHLIGHT_MODEL_ID = 516522664
+local flashlights = {} -- [player] = { Model, Joint, SavedC0 }
+
+local function removeFlashlight(player: Player)
+	local entry = flashlights[player]
+	if not entry then return end
+	if entry.Joint and entry.SavedC0 then
+		pcall(function()
+			entry.Joint.C0 = entry.SavedC0
+		end)
+	end
+	if entry.Model then
+		entry.Model:Destroy()
+	end
+	flashlights[player] = nil
+end
+
+local function equipFlashlight(player: Player)
+	removeFlashlight(player)
+	local char = player.Character
+	if not char then return end
+	local hand = char:FindFirstChild("RightHand") or char:FindFirstChild("Right Arm")
+	if not hand or not hand:IsA("BasePart") then return end
+
+	local fl = ModelFactory.TryLoad(FLASHLIGHT_MODEL_ID)
+	if not fl then return end
+	local handle = (fl:IsA("Model") and (fl.PrimaryPart or fl:FindFirstChildWhichIsA("BasePart"))) or fl
+	if not handle or not handle:IsA("BasePart") then
+		fl:Destroy()
+		return
+	end
+
+	-- Sit it in the palm and weld every part so it rides with the hand.
+	if fl:IsA("Model") then
+		fl:PivotTo(hand.CFrame * CFrame.new(0, -0.6, -0.3))
+	else
+		fl.CFrame = hand.CFrame * CFrame.new(0, -0.6, -0.3)
+	end
+	local parts = {}
+	if fl:IsA("BasePart") then
+		parts = { fl }
+	else
+		for _, d in ipairs(fl:GetDescendants()) do
+			if d:IsA("BasePart") then
+				table.insert(parts, d)
+			end
+		end
+	end
+	for _, p in ipairs(parts) do
+		p.Anchored = false
+		p.CanCollide = false
+		p.Massless = true
+		local w = Instance.new("WeldConstraint")
+		w.Part0 = hand
+		w.Part1 = p
+		w.Parent = p
+	end
+	fl.Parent = char
+
+	-- A beam from the flashlight itself (the client also lights the local player).
+	local beam = Instance.new("SpotLight")
+	beam.Face = Enum.NormalId.Front
+	beam.Angle = 60
+	beam.Range = 30
+	beam.Brightness = 2
+	beam.Color = Color3.fromRGB(255, 244, 214)
+	beam.Parent = handle
+
+	local entry = { Model = fl }
+
+	-- Pose the right arm forward (best-effort; depends on R15/R6 rig).
+	local upperArm = char:FindFirstChild("RightUpperArm")
+	local shoulder = upperArm and upperArm:FindFirstChild("RightShoulder")
+	if shoulder and shoulder:IsA("Motor6D") then
+		entry.Joint = shoulder
+		entry.SavedC0 = shoulder.C0
+		shoulder.C0 = shoulder.C0 * CFrame.Angles(math.rad(-75), 0, 0)
+	else
+		local torso = char:FindFirstChild("Torso")
+		local rs = torso and torso:FindFirstChild("Right Shoulder")
+		if rs and rs:IsA("Motor6D") then
+			entry.Joint = rs
+			entry.SavedC0 = rs.C0
+			rs.C0 = rs.C0 * CFrame.Angles(0, 0, math.rad(-75))
+		end
+	end
+
+	flashlights[player] = entry
+end
+
+-- =============================================
 --  TRAVEL
 -- =============================================
 local function teleportTo(player: Player, cframe: CFrame)
@@ -241,6 +351,7 @@ end
 
 local function returnToMuseum(player: Player)
 	inExpedition[player] = nil
+	removeFlashlight(player)
 	local museum = PedestalService.GetMuseum(player)
 	if museum and museum.Spawn then
 		teleportTo(player, museum.Spawn.CFrame + Vector3.new(0, 4, 0))
@@ -254,7 +365,10 @@ function ExpeditionService.Start(player: Player, mapId: string)
 
 	inExpedition[player] = mapId
 	teleportTo(player, map.Info.SpawnCFrame)
-	fireState(player, "Entered", nil, { Fog = map.Fog })
+	-- Fire the darkness/lighting IMMEDIATELY so it doesn't wait on the flashlight
+	-- asset download; equip the flashlight in the background.
+	fireState(player, "Entered", nil, { Fog = map.Fog, FogColor = map.FogColor, Ambient = map.Ambient })
+	task.spawn(equipFlashlight, player)
 	return true, "Expedition started"
 end
 
@@ -352,7 +466,7 @@ local function buildMap(def, mapIndex: number)
 	local pickupCount = def.Pickups or DEFAULT_PICKUPS
 	local monsterCount = def.Monsters or DEFAULT_MONSTERS
 
-	local map = { Info = info, Pickups = {}, BaseCF = {}, Luck = def.Luck or 1, Fog = def.Fog }
+	local map = { Info = info, Pickups = {}, BaseCF = {}, Luck = def.Luck or 1, Fog = def.Fog, FogColor = def.FogColor, Ambient = def.Ambient }
 	maps[def.Id] = map
 
 	-- Seed the position pool, then place only a few artifacts at random spots.
@@ -384,6 +498,10 @@ local function init()
 	for i, def in ipairs(ExpeditionMaps) do
 		buildMap(def, i)
 	end
+	-- Warm the flashlight asset cache so the first expedition equips instantly.
+	task.spawn(function()
+		ModelFactory.TryLoad(FLASHLIGHT_MODEL_ID)
+	end)
 end
 
 -- =============================================
@@ -402,6 +520,7 @@ Players.PlayerRemoving:Connect(function(player)
 	inExpedition[player] = nil
 	extractDebounce[player] = nil
 	removeCarry(player)
+	removeFlashlight(player)
 end)
 
 init()

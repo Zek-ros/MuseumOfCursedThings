@@ -88,6 +88,12 @@ function ExpeditionBuilder.Build(origin: CFrame, def)
 	local model = Instance.new("Model")
 	model.Name = "ExpeditionMap_" .. ((def and def.Id) or "maze")
 
+	-- Per-maze look (falls back to the default dark palette).
+	local floorColor = (def and def.Floor) or FLOOR_COLOR
+	local wallColor = (def and def.Wall) or WALL_COLOR
+	local crateColor = (def and def.Crate) or CRATE_COLOR
+	local wallMat = (def and def.WallMaterial) or Enum.Material.Concrete
+
 	-- Local center of cell (c, r): c = 1..W along X, r = 1..H along Z.
 	local function cellPos(c: number, r: number): Vector3
 		return Vector3.new((c - 0.5) * CELL - halfX, 0, (r - 0.5) * CELL - halfZ)
@@ -95,19 +101,19 @@ function ExpeditionBuilder.Build(origin: CFrame, def)
 
 	-- Floor + roof (the roof keeps skylight out so it stays dark inside)
 	makePart(origin, model, "Floor", Vector3.new(roomX, WALL_THICK, roomZ),
-		Vector3.new(0, -WALL_THICK / 2, 0), FLOOR_COLOR, Enum.Material.Concrete)
+		Vector3.new(0, -WALL_THICK / 2, 0), floorColor, Enum.Material.Concrete)
 	makePart(origin, model, "Ceiling", Vector3.new(roomX, WALL_THICK, roomZ),
-		Vector3.new(0, WALL_HEIGHT + WALL_THICK / 2, 0), WALL_COLOR, Enum.Material.Concrete)
+		Vector3.new(0, WALL_HEIGHT + WALL_THICK / 2, 0), wallColor, wallMat)
 
 	-- Outer walls
 	makePart(origin, model, "WallBack", Vector3.new(roomX, WALL_HEIGHT, WALL_THICK),
-		Vector3.new(0, wallY, -halfZ), WALL_COLOR, Enum.Material.Concrete)
+		Vector3.new(0, wallY, -halfZ), wallColor, wallMat)
 	makePart(origin, model, "WallFront", Vector3.new(roomX, WALL_HEIGHT, WALL_THICK),
-		Vector3.new(0, wallY, halfZ), WALL_COLOR, Enum.Material.Concrete)
+		Vector3.new(0, wallY, halfZ), wallColor, wallMat)
 	makePart(origin, model, "WallLeft", Vector3.new(WALL_THICK, WALL_HEIGHT, roomZ),
-		Vector3.new(-halfX, wallY, 0), WALL_COLOR, Enum.Material.Concrete)
+		Vector3.new(-halfX, wallY, 0), wallColor, wallMat)
 	makePart(origin, model, "WallRight", Vector3.new(WALL_THICK, WALL_HEIGHT, roomZ),
-		Vector3.new(halfX, wallY, 0), WALL_COLOR, Enum.Material.Concrete)
+		Vector3.new(halfX, wallY, 0), wallColor, wallMat)
 
 	-- Internal maze walls (braided so there are loops, not a single dead path)
 	local openE, openS = carveMaze(W, H)
@@ -116,11 +122,11 @@ function ExpeditionBuilder.Build(origin: CFrame, def)
 			local p = cellPos(c, r)
 			if c < W and not openE[c][r] and math.random() > BRAID then
 				makePart(origin, model, "MazeWall", Vector3.new(WALL_THICK, WALL_HEIGHT, CELL),
-					Vector3.new(p.X + CELL / 2, wallY, p.Z), WALL_COLOR, Enum.Material.Concrete)
+					Vector3.new(p.X + CELL / 2, wallY, p.Z), wallColor, wallMat)
 			end
 			if r < H and not openS[c][r] and math.random() > BRAID then
 				makePart(origin, model, "MazeWall", Vector3.new(CELL + WALL_THICK, WALL_HEIGHT, WALL_THICK),
-					Vector3.new(p.X, wallY, p.Z + CELL / 2), WALL_COLOR, Enum.Material.Concrete)
+					Vector3.new(p.X, wallY, p.Z + CELL / 2), wallColor, wallMat)
 			end
 		end
 	end
@@ -195,7 +201,7 @@ function ExpeditionBuilder.Build(origin: CFrame, def)
 		local cell = cells[poolCount + i]
 		local p = cellPos(cell[1], cell[2])
 		makePart(origin, model, "Crate", Vector3.new(4, 4, 4),
-			Vector3.new(p.X + math.random(-3, 3), 2, p.Z + math.random(-3, 3)), CRATE_COLOR, Enum.Material.WoodPlanks)
+			Vector3.new(p.X + math.random(-3, 3), 2, p.Z + math.random(-3, 3)), crateColor, Enum.Material.WoodPlanks)
 	end
 
 	return {
