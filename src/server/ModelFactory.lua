@@ -32,22 +32,71 @@ local function normalize(instance: Instance)
 	return instance
 end
 
---- Return a real model for `assetId` if it loads, else `fallbackFn()`.
--- assetId may be a number or numeric string; nil/0/"" means "use fallback".
+-- Asset templates are loaded ONCE and cloned thereafter — frequently-spawned
+-- monsters/visitors shouldn't hit InsertService every time. `false` = load failed
+-- (so we don't keep retrying a bad/locked id every spawn).
+local cache: { [number]: Instance | false } = {}
+
+local function loadTemplate(numericId: number)
+	local cached = cache[numericId]
+	if cached ~= nil then
+		return cached
+	end
+	local ok, loaded = pcall(function()
+		return InsertService:LoadAsset(numericId)
+	end)
+	if ok and loaded then
+		local model = loaded:FindFirstChildWhichIsA("Model") or loaded
+		model.Parent = nil
+		cache[numericId] = model
+		return model
+	end
+	warn("[ModelFactory] LoadAsset failed for id " .. tostring(numericId) .. " — using placeholder.")
+	cache[numericId] = false
+	return false
+end
+
+--- Return a real model for `assetId` if it loads, else `fallbackFn()`. The result
+-- is normalized (anchored + non-colliding) for use as a floating/moving visual
+-- (artifacts, monsters, visitors). nil/0/"" means "use fallback".
 function ModelFactory.Resolve(assetId, fallbackFn: () -> Instance): Instance
 	local numericId = tonumber(assetId)
 	if numericId and numericId > 0 then
-		local ok, loaded = pcall(function()
-			return InsertService:LoadAsset(numericId)
-		end)
-		if ok and loaded then
-			local model = loaded:FindFirstChildWhichIsA("Model") or loaded
-			model.Parent = nil
-			return normalize(model)
+		local template = loadTemplate(numericId)
+		if template then
+			return normalize(template:Clone())
 		end
-		-- fall through to fallback on failure
+		-- load failed → fall through to fallback
 	end
 	return normalize(fallbackFn())
+end
+
+--- Load a real model by asset id for use as a SOLID, grounded prop (pedestals,
+-- portals): anchors every part but KEEPS the authored collisions. Returns nil if
+-- the asset can't be loaded, so the caller can keep its own procedural fallback.
+function ModelFactory.TryLoad(assetId): Instance?
+	local numericId = tonumber(assetId)
+	if not (numericId and numericId > 0) then
+		return nil
+	end
+	local template = loadTemplate(numericId)
+	if not template then
+		return nil
+	end
+	local clone = template:Clone()
+	if clone:IsA("BasePart") then
+		clone.Anchored = true
+	else
+		for _, d in ipairs(clone:GetDescendants()) do
+			if d:IsA("BasePart") then
+				d.Anchored = true
+			end
+		end
+		if clone:IsA("Model") and not clone.PrimaryPart then
+			clone.PrimaryPart = clone:FindFirstChildWhichIsA("BasePart")
+		end
+	end
+	return clone
 end
 
 --- Position/orient an instance, whether it's a single Part or a Model.

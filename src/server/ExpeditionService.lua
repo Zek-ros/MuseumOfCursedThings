@@ -14,7 +14,9 @@ local ArtifactService   = require(script.Parent.ArtifactService)
 local PedestalService   = require(script.Parent.PedestalService)
 local MonsterService    = require(script.Parent.MonsterService)
 local ExpeditionBuilder = require(script.Parent.ExpeditionBuilder)
+local ModelFactory      = require(script.Parent.ModelFactory)
 local ArtifactData      = require(ReplicatedStorage.Shared.ArtifactData)
+local ArtifactModels    = require(ReplicatedStorage.Shared.ArtifactModels)
 local Constants         = require(ReplicatedStorage.Shared.Constants)
 local ExpeditionMaps    = require(ReplicatedStorage.Shared.ExpeditionMaps)
 
@@ -85,58 +87,66 @@ local function spawnPickup(mapId: string, index: number)
 	local def = ArtifactData.Artifacts[artifactId]
 	if not def then return end
 
-	local part = Instance.new("Part")
-	part.Name = "ArtifactPickup"
-	part.Anchored = true
-	part.CanCollide = false
-	part.Size = Vector3.new(1.8, 1.8, 1.8)
-	part.Material = Enum.Material.Neon
-	part.Color = rarityColor(rarity)
-	part.CFrame = map.BaseCF[index]
+	local color = rarityColor(rarity)
 
-	-- Subtle glow only — no long-range beacon, so you must get close to spot it.
-	local light = Instance.new("PointLight")
-	light.Color = part.Color
-	light.Range = 5
-	light.Brightness = 1.2
-	light.Parent = part
-
-	-- Name only legible up close (can't ID artifacts from across the room).
-	local nameTag = makeNameLabel(part, def.Name, part.Color, 2)
-	nameTag.MaxDistance = 14
-
-	local prompt = Instance.new("ProximityPrompt")
-	prompt.ActionText = "Take"
-	prompt.ObjectText = def.Name
-	prompt.HoldDuration = 0.4
-	prompt.MaxActivationDistance = 9
-	prompt.RequiresLineOfSight = false
-	prompt.Parent = part
-
-	prompt.Triggered:Connect(function(triggerPlayer)
-		if not inExpedition[triggerPlayer] then return end
-		if carrying[triggerPlayer] then
-			fireState(triggerPlayer, "AlreadyCarrying")
-			return
-		end
-		if not part.Parent then return end -- already taken
-		part:Destroy()
-		map.Pickups[index] = nil
-
-		carrying[triggerPlayer] = { ArtifactId = artifactId, Rarity = rarity }
-		ExpeditionService.AttachCarry(triggerPlayer, artifactId, rarity)
-		fireState(triggerPlayer, "Carrying", def.Name)
-		-- The artifact attracts monsters while carried — more/faster for scarier ones.
-		MonsterService.StartHunt(triggerPlayer, def.DangerLevel)
-
-		-- Respawn elsewhere (a random free spot) so locations keep shifting.
-		task.delay(PICKUP_RESPAWN, function()
-			spawnRandomPickup(mapId)
-		end)
+	-- The artifact's real model (asset id → builder) or a small neon cube.
+	local builder = ArtifactModels[artifactId]
+	local visual = ModelFactory.Resolve(def.ModelId, builder or function()
+		local cube = Instance.new("Part")
+		cube.Size = Vector3.new(1.8, 1.8, 1.8)
+		cube.Material = Enum.Material.Neon
+		cube.Color = color
+		return cube
 	end)
+	visual.Name = "ArtifactPickup"
 
-	part.Parent = map.Info.Model
-	map.Pickups[index] = part
+	-- Glow + name label + the "Take" prompt all hang off the model's main part.
+	local anchor = ModelFactory.AnchorPart(visual)
+	if anchor then
+		local light = Instance.new("PointLight")
+		light.Color = color
+		light.Range = 6
+		light.Brightness = 1.4
+		light.Parent = anchor
+
+		-- Name only legible up close (can't ID artifacts from across the room).
+		local nameTag = makeNameLabel(anchor, def.Name, color, 3)
+		nameTag.MaxDistance = 16
+
+		local prompt = Instance.new("ProximityPrompt")
+		prompt.ActionText = "Take"
+		prompt.ObjectText = def.Name
+		prompt.HoldDuration = 0.4
+		prompt.MaxActivationDistance = 9
+		prompt.RequiresLineOfSight = false
+		prompt.Parent = anchor
+
+		prompt.Triggered:Connect(function(triggerPlayer)
+			if not inExpedition[triggerPlayer] then return end
+			if carrying[triggerPlayer] then
+				fireState(triggerPlayer, "AlreadyCarrying")
+				return
+			end
+			if not visual.Parent then return end -- already taken
+			visual:Destroy()
+			map.Pickups[index] = nil
+
+			carrying[triggerPlayer] = { ArtifactId = artifactId, Rarity = rarity }
+			ExpeditionService.AttachCarry(triggerPlayer, artifactId, rarity)
+			fireState(triggerPlayer, "Carrying", def.Name)
+			-- The artifact attracts monsters while carried — more/faster for scarier ones.
+			MonsterService.StartHunt(triggerPlayer, def.DangerLevel)
+
+			-- Respawn elsewhere (a random free spot) so locations keep shifting.
+			task.delay(PICKUP_RESPAWN, function()
+				spawnRandomPickup(mapId)
+			end)
+		end)
+	end
+
+	ModelFactory.Place(visual, map.BaseCF[index])
+	visual.Parent = map.Info.Model
+	map.Pickups[index] = visual
 end
 
 -- Spawn one pickup at a random unoccupied position in the map's pool.
@@ -296,9 +306,9 @@ local spinAngle = 0
 RunService.Heartbeat:Connect(function(dt)
 	spinAngle += dt * 1.2
 	for _, map in pairs(maps) do
-		for index, part in pairs(map.Pickups) do
-			if part.Parent and map.BaseCF[index] then
-				part.CFrame = map.BaseCF[index] * CFrame.Angles(0, spinAngle, 0)
+		for index, visual in pairs(map.Pickups) do
+			if visual.Parent and map.BaseCF[index] then
+				ModelFactory.Place(visual, map.BaseCF[index] * CFrame.Angles(0, spinAngle, 0))
 			end
 		end
 	end

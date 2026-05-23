@@ -20,7 +20,7 @@ local Constants    = require(ReplicatedStorage.Shared.Constants)
 
 local MonsterService = {}
 
-local MONSTER_MODEL_ID = nil
+local MONSTER_MODEL_ID = 8482062232
 
 local CATCH_RADIUS    = 6
 local SPAWN_DISTANCE  = 34

@@ -100,6 +100,9 @@
 				},
 				"SoundData": {
 					"$path": "src/shared/SoundData.lua"
+				},
+				"ArtifactModels": {
+					"$path": "src/shared/ArtifactModels"
 				}
 			},
 			"RemoteEvents": {

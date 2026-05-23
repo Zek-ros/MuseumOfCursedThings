@@ -8,8 +8,13 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Constants = require(ReplicatedStorage.Shared.Constants)
+local ModelFactory = require(script.Parent.ModelFactory)
 
 local MuseumBuilder = {}
+
+-- Real Store models for the solid props (nil = keep the procedural version).
+local PEDESTAL_MODEL_ID = 5057773836
+local HUB_PORTAL_MODEL_ID = 18506880748
 
 -- Room dimensions (studs) — sized to fit MAX_PEDESTALS in rows.
 local ROOM_X = 84
@@ -54,11 +59,44 @@ local function pedestalLocalPos(index: number): Vector3
 	return Vector3.new(x, 2, z)
 end
 
---- Create a single pedestal at slot `index`, parented to `parent`. Returns the part.
+-- Stand a loaded prop model on the floor at a local (x, _, z), optionally yawed
+-- so it faces a direction. Returns the model's height (for hover math).
+local function sitProp(origin: CFrame, model, localX: number, localZ: number, yaw: number?): number
+	local floorPos = (origin * CFrame.new(localX, 0, localZ)).Position
+	model:PivotTo(CFrame.new(floorPos) * CFrame.Angles(0, yaw or 0, 0))
+	local cf, size = model:GetBoundingBox()
+	local delta = Vector3.new(
+		floorPos.X - cf.Position.X,
+		(floorPos.Y + size.Y / 2) - cf.Position.Y,
+		floorPos.Z - cf.Position.Z)
+	model:PivotTo(model:GetPivot() + delta)
+	return size.Y
+end
+
+--- Create a single pedestal at slot `index`, parented to `parent`. Returns the
+-- part PedestalService treats as the pedestal (its prompt + hover anchor). If a
+-- Store model is configured it becomes the visual; otherwise a marble block.
 function MuseumBuilder.MakePedestal(origin: CFrame, index: number, parent: Instance)
+	local lp = pedestalLocalPos(index)
+
+	local model = ModelFactory.TryLoad(PEDESTAL_MODEL_ID)
+	if model then
+		local height = sitProp(origin, model, lp.X, lp.Z, 0)
+		-- Invisible anchor: holds the prompt + index, and its top (Position +
+		-- Size.Y/2) is where PedestalService floats the artifact.
+		local anchor = makePart(origin, parent, "Pedestal",
+			Vector3.new(3, height, 3), Vector3.new(lp.X, height / 2, lp.Z),
+			PEDESTAL_COLOR, Enum.Material.SmoothPlastic)
+		anchor.Transparency = 1
+		anchor.CanCollide = false
+		anchor:SetAttribute("PedestalIndex", index)
+		model.Parent = anchor -- removing the anchor (on prestige reset) frees the model too
+		return anchor
+	end
+
 	local pedestal = makePart(origin, parent, "Pedestal",
 		Vector3.new(3, 4, 3),
-		pedestalLocalPos(index),
+		lp,
 		PEDESTAL_COLOR, Enum.Material.Marble)
 	pedestal:SetAttribute("PedestalIndex", index)
 	return pedestal
@@ -135,18 +173,29 @@ function MuseumBuilder.Build(origin: CFrame, ownerName: string)
 	-- Placed away from the spawn-arrival point so you don't bounce straight back.
 	local portalColor = Color3.fromRGB(150, 90, 230)
 	local px = -halfX + 1.5
-	makePart(origin, model, "PortalFrame", Vector3.new(1, 11, 1), Vector3.new(px, 5.5, -3.5), portalColor, Enum.Material.Neon)
-	makePart(origin, model, "PortalFrame", Vector3.new(1, 11, 1), Vector3.new(px, 5.5, 3.5), portalColor, Enum.Material.Neon)
-	makePart(origin, model, "PortalFrame", Vector3.new(1.2, 1, 8), Vector3.new(px, 11, 0), portalColor, Enum.Material.Neon)
 
+	-- Use the Store portal model if it loads; otherwise the original purple frame.
+	local portalModel = ModelFactory.TryLoad(HUB_PORTAL_MODEL_ID)
+	if portalModel then
+		sitProp(origin, portalModel, px + 1.5, 0, math.rad(90)) -- face into the room
+		portalModel.Parent = model
+	else
+		makePart(origin, model, "PortalFrame", Vector3.new(1, 11, 1), Vector3.new(px, 5.5, -3.5), portalColor, Enum.Material.Neon)
+		makePart(origin, model, "PortalFrame", Vector3.new(1, 11, 1), Vector3.new(px, 5.5, 3.5), portalColor, Enum.Material.Neon)
+		makePart(origin, model, "PortalFrame", Vector3.new(1.2, 1, 8), Vector3.new(px, 11, 0), portalColor, Enum.Material.Neon)
+	end
+
+	-- Invisible touch trigger (the visual is the model above, or the frame fallback).
 	local portal = makePart(origin, model, "HubPortal", Vector3.new(0.6, 10, 6.5), Vector3.new(px + 0.4, 5, 0), portalColor, Enum.Material.Neon)
 	portal.CanCollide = false
-	portal.Transparency = 0.35
-	local portalLight = Instance.new("PointLight")
-	portalLight.Color = portalColor
-	portalLight.Range = 16
-	portalLight.Brightness = 3
-	portalLight.Parent = portal
+	portal.Transparency = portalModel and 1 or 0.35
+	if not portalModel then
+		local portalLight = Instance.new("PointLight")
+		portalLight.Color = portalColor
+		portalLight.Range = 16
+		portalLight.Brightness = 3
+		portalLight.Parent = portal
+	end
 
 	local portalBillboard = Instance.new("BillboardGui")
 	portalBillboard.Size = UDim2.new(0, 140, 0, 40)

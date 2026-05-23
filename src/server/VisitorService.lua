@@ -17,7 +17,7 @@ local VisitorService = {}
 
 -- Set this to a Roblox model asset id to use a real visitor model instead of
 -- the placeholder figure. nil = procedural placeholder.
-local VISITOR_MODEL_ID = nil
+local VISITOR_MODEL_ID = 4446576906
 
 -- [player] = { Visitors = { { Model = Model, State = "wander"|"panic", FleeTarget = CFrame? } } }
 local crowds = {}

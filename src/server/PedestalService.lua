@@ -4,8 +4,9 @@
 -- pedestals. Listens to MuseumSignals.MuseumChanged to stay in sync with
 -- the data layer.
 --
--- NOTE: artifact "models" are procedural neon cubes for now — drop in real
--- meshes later by replacing spawnArtifactDisplay().
+-- NOTE: artifacts display via ModelFactory.Resolve(def.ModelId, fallback). The
+-- fallback is a per-artifact builder from ArtifactModels (drop your "object
+-- building scripts" there), or a neon cube if that artifact has no builder yet.
 
 local Players           = game:GetService("Players")
 local RunService        = game:GetService("RunService")
@@ -17,6 +18,7 @@ local MuseumBuilder = require(script.Parent.MuseumBuilder)
 local MuseumSignals = require(script.Parent.MuseumSignals)
 local ModelFactory  = require(script.Parent.ModelFactory)
 local ArtifactData  = require(ReplicatedStorage.Shared.ArtifactData)
+local ArtifactModels = require(ReplicatedStorage.Shared.ArtifactModels)
 local Constants     = require(ReplicatedStorage.Shared.Constants)
 local MuseumStats   = require(ReplicatedStorage.Shared.MuseumStats)
 
@@ -38,12 +40,14 @@ local function rarityColor(rarity: string): Color3
 	return (info and info.Color) or Color3.fromRGB(255, 255, 255)
 end
 
-local function spawnArtifactDisplay(museum, pedestal: BasePart, def)
+local function spawnArtifactDisplay(museum, pedestal: BasePart, def, artifactId: string?)
 	local base = pedestal.Position + Vector3.new(0, pedestal.Size.Y / 2 + 3, 0)
 	local color = rarityColor(def.Rarity)
 
-	-- Real model by asset id if the artifact defines one; else a neon cube.
-	local visual = ModelFactory.Resolve(def.ModelId, function()
+	-- Priority: a real model by asset id (def.ModelId) → a per-artifact builder
+	-- from ArtifactModels → a plain neon cube placeholder.
+	local builder = artifactId and ArtifactModels[artifactId]
+	local visual = ModelFactory.Resolve(def.ModelId, builder or function()
 		local part = Instance.new("Part")
 		part.Name = "ArtifactDisplay"
 		part.CastShadow = false
@@ -152,7 +156,7 @@ local function refreshPlayer(player: Player)
 		if art.IsDisplayed then
 			local def = ArtifactData.Artifacts[art.ArtifactId]
 			if def then
-				table.insert(displayed, { Index = i, Def = def })
+				table.insert(displayed, { Index = i, Def = def, ArtifactId = art.ArtifactId })
 			end
 		end
 	end
@@ -162,7 +166,7 @@ local function refreshPlayer(player: Player)
 		local prompt = pedestal:FindFirstChildOfClass("ProximityPrompt")
 		local entry = displayed[pedIdx]
 		if entry then
-			local visual, base = spawnArtifactDisplay(museum, pedestal, entry.Def)
+			local visual, base = spawnArtifactDisplay(museum, pedestal, entry.Def, entry.ArtifactId)
 			table.insert(museum.DisplayParts, { Visual = visual, Base = base })
 			museum.Assignments[pedIdx] = entry.Index
 			if prompt then
