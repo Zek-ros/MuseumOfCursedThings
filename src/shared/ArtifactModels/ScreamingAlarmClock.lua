@@ -13,7 +13,7 @@ local function Create()
 
 	local body = Instance.new("Part")
 	body.Shape = Enum.PartType.Cylinder
-	body.Size = Vector3.new(3,1,3)
+	body.Size = Vector3.new(1, 3, 3) -- round clock face: 3 wide, 1 thick (was a flat ellipse)
 	body.Color = Color3.fromRGB(220,0,0)
 	body.Anchored = true
 	body.Parent = model

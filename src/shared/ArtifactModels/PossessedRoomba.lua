@@ -11,9 +11,20 @@ local function Create()
 	local model = Instance.new("Model")
 	model.Name = "PossessedRoomba"
 
+	-- Invisible upright root so PivotTo/spin keeps the rotated cylinder flat.
+	local root = Instance.new("Part")
+	root.Name = "Root"
+	root.Size = Vector3.new(0.2, 0.2, 0.2)
+	root.Transparency = 1
+	root.Anchored = true
+	root.CanCollide = false
+	root.Parent = model
+	model.PrimaryPart = root
+
 	local body = Instance.new("Part")
 	body.Shape = Enum.PartType.Cylinder
-	body.Size = Vector3.new(3,1,3)
+	body.Size = Vector3.new(1, 3, 3) -- thin disc (length X = 1 thick, 3 wide)
+	body.CFrame = CFrame.Angles(0, 0, math.rad(90)) -- lay it flat like a roomba
 	body.Color = Color3.fromRGB(30,30,30)
 	body.Anchored = true
 	body.Parent = model

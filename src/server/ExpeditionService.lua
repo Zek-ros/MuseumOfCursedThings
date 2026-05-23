@@ -172,26 +172,52 @@ function ExpeditionService.AttachCarry(player: Player, artifactId: string, rarit
 	if not hrp then return end
 	local def = ArtifactData.Artifacts[artifactId]
 
-	local part = Instance.new("Part")
-	part.Name = "CarriedArtifact"
-	part.Size = Vector3.new(2, 2, 2)
-	part.Material = Enum.Material.Neon
-	part.Color = rarityColor(rarity)
-	part.CanCollide = false
-	part.Massless = true
-	part.CFrame = hrp.CFrame * CFrame.new(0, 3.5, 0)
+	local color = rarityColor(rarity)
 
-	if def then
-		makeNameLabel(part, def.Name, part.Color, 2)
+	-- Carry the real artifact model, shrunk so it doesn't block your view.
+	local builder = ArtifactModels[artifactId]
+	local visual = ModelFactory.Resolve(def and def.ModelId, builder or function()
+		local cube = Instance.new("Part")
+		cube.Size = Vector3.new(2, 2, 2)
+		cube.Material = Enum.Material.Neon
+		cube.Color = color
+		return cube
+	end)
+	visual.Name = "CarriedArtifact"
+	if visual:IsA("Model") then
+		pcall(function()
+			visual:ScaleTo(0.55)
+		end)
 	end
 
-	local weld = Instance.new("WeldConstraint")
-	weld.Part0 = hrp
-	weld.Part1 = part
-	weld.Parent = part
+	local anchor = ModelFactory.AnchorPart(visual)
+	if anchor and def then
+		makeNameLabel(anchor, def.Name, color, 2)
+	end
 
-	part.Parent = char
-	carriedPart[player] = part
+	-- Float it above the player and weld every part so it rides along.
+	ModelFactory.Place(visual, hrp.CFrame * CFrame.new(0, 3.2, 0))
+	local function rideAlong(p: BasePart)
+		p.Anchored = false
+		p.CanCollide = false
+		p.Massless = true
+		local weld = Instance.new("WeldConstraint")
+		weld.Part0 = hrp
+		weld.Part1 = p
+		weld.Parent = p
+	end
+	if visual:IsA("BasePart") then
+		rideAlong(visual)
+	else
+		for _, d in ipairs(visual:GetDescendants()) do
+			if d:IsA("BasePart") then
+				rideAlong(d)
+			end
+		end
+	end
+
+	visual.Parent = char
+	carriedPart[player] = visual
 end
 
 local function removeCarry(player: Player)

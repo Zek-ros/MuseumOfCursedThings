@@ -11,9 +11,20 @@ local function Create()
 	local model = Instance.new("Model")
 	model.Name = "EternalCandle"
 
+	-- Invisible upright root so PivotTo/spin keeps the rotated cylinder vertical.
+	local root = Instance.new("Part")
+	root.Name = "Root"
+	root.Size = Vector3.new(0.2, 0.2, 0.2)
+	root.Transparency = 1
+	root.Anchored = true
+	root.CanCollide = false
+	root.Parent = model
+	model.PrimaryPart = root
+
 	local candle = Instance.new("Part")
 	candle.Shape = Enum.PartType.Cylinder
-	candle.Size = Vector3.new(1,4,1)
+	candle.Size = Vector3.new(4, 0.9, 0.9) -- length (X) is the height
+	candle.CFrame = CFrame.Angles(0, 0, math.rad(90)) -- stand it upright
 	candle.Color = Color3.fromRGB(255,240,200)
 	candle.Anchored = true
 	candle.Parent = model
