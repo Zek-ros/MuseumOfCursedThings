@@ -73,6 +73,37 @@ local function sitProp(origin: CFrame, model, localX: number, localZ: number, ya
 	return size.Y
 end
 
+-- World-space axis-aligned min/max corners of a (possibly rotated) model.
+local function worldAABB(model): (Vector3, Vector3)
+	local cf, size = model:GetBoundingBox()
+	local hx, hy, hz = size.X / 2, size.Y / 2, size.Z / 2
+	local minv = Vector3.new(math.huge, math.huge, math.huge)
+	local maxv = Vector3.new(-math.huge, -math.huge, -math.huge)
+	for _, sx in ipairs({ -1, 1 }) do
+		for _, sy in ipairs({ -1, 1 }) do
+			for _, sz in ipairs({ -1, 1 }) do
+				local corner = (cf * CFrame.new(sx * hx, sy * hy, sz * hz)).Position
+				minv = Vector3.new(math.min(minv.X, corner.X), math.min(minv.Y, corner.Y), math.min(minv.Z, corner.Z))
+				maxv = Vector3.new(math.max(maxv.X, corner.X), math.max(maxv.Y, corner.Y), math.max(maxv.Z, corner.Z))
+			end
+		end
+	end
+	return minv, maxv
+end
+
+-- Stand a prop flush against the LEFT wall (local x = wallLocalX): its nearest
+-- face touches the wall, its base sits on the floor, centered along z = localZ.
+local function placeAgainstWall(origin: CFrame, model, wallLocalX: number, localZ: number, yaw: number?)
+	local wallPos = (origin * CFrame.new(wallLocalX, 0, localZ)).Position
+	model:PivotTo(CFrame.new(wallPos) * CFrame.Angles(0, yaw or 0, 0))
+	local minv, maxv = worldAABB(model)
+	local delta = Vector3.new(
+		wallPos.X - minv.X,                 -- push the back face flush to the wall
+		wallPos.Y - minv.Y,                 -- base on the floor
+		wallPos.Z - (minv.Z + maxv.Z) / 2)  -- centered along the wall
+	model:PivotTo(model:GetPivot() + delta)
+end
+
 --- Create a single pedestal at slot `index`, parented to `parent`. Returns the
 -- part PedestalService treats as the pedestal (its prompt + hover anchor). If a
 -- Store model is configured it becomes the visual; otherwise a marble block.
@@ -177,7 +208,7 @@ function MuseumBuilder.Build(origin: CFrame, ownerName: string)
 	-- Use the Store portal model if it loads; otherwise the original purple frame.
 	local portalModel = ModelFactory.TryLoad(HUB_PORTAL_MODEL_ID)
 	if portalModel then
-		sitProp(origin, portalModel, px + 1.5, 0, math.rad(90)) -- face into the room
+		placeAgainstWall(origin, portalModel, -halfX, 0, math.rad(90)) -- flush to the left wall
 		portalModel.Parent = model
 	else
 		makePart(origin, model, "PortalFrame", Vector3.new(1, 11, 1), Vector3.new(px, 5.5, -3.5), portalColor, Enum.Material.Neon)
