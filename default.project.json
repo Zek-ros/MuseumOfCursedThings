@@ -3,6 +3,20 @@
 	"tree": {
 		"$className": "DataModel",
 
+		"Workspace": {
+			"$className": "Workspace",
+			"$properties": {
+				"StreamingEnabled": false
+			}
+		},
+
+		"Lighting": {
+			"$className": "Lighting",
+			"$properties": {
+				"Technology": "Future"
+			}
+		},
+
 		"ServerScriptService": {
 			"$className": "ServerScriptService",
 			"GameManager": {
@@ -65,6 +79,9 @@
 			"DailyRewardService": {
 				"$path": "src/server/DailyRewardService.lua"
 			},
+			"OfflineEarningsService": {
+				"$path": "src/server/OfflineEarningsService.lua"
+			},
 			"PrestigeService": {
 				"$path": "src/server/PrestigeService.lua"
 			},
@@ -73,6 +90,15 @@
 			},
 			"MonetizationService": {
 				"$path": "src/server/MonetizationService.lua"
+			},
+			"AdminService": {
+				"$path": "src/server/AdminService.lua"
+			},
+			"GoalService": {
+				"$path": "src/server/GoalService.lua"
+			},
+			"ThemeService": {
+				"$path": "src/server/ThemeService.lua"
 			}
 		},
 
@@ -103,6 +129,12 @@
 				},
 				"ArtifactModels": {
 					"$path": "src/shared/ArtifactModels"
+				},
+				"ArtifactMeshes": {
+					"$path": "src/shared/ArtifactMeshes"
+				},
+				"MonsterModels": {
+					"$path": "src/shared/MonsterModels"
 				}
 			},
 			"RemoteEvents": {
@@ -138,6 +170,18 @@
 					"$className": "RemoteEvent"
 				},
 				"LaunchExpeditionQueue": {
+					"$className": "RemoteEvent"
+				},
+				"WelcomeBack": {
+					"$className": "RemoteEvent"
+				},
+				"GoalUpdated": {
+					"$className": "RemoteEvent"
+				},
+				"OpenShop": {
+					"$className": "RemoteEvent"
+				},
+				"OpenDailyReward": {
 					"$className": "RemoteEvent"
 				}
 			},
@@ -210,6 +254,15 @@
 					"$className": "RemoteFunction"
 				},
 				"GetShop": {
+					"$className": "RemoteFunction"
+				},
+				"GetGoalStatus": {
+					"$className": "RemoteFunction"
+				},
+				"GetThemes": {
+					"$className": "RemoteFunction"
+				},
+				"SelectTheme": {
 					"$className": "RemoteFunction"
 				}
 			}

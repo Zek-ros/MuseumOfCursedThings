@@ -44,6 +44,10 @@ local DEFAULT_DATA = {
 	DoubleIncome = false, -- "Double Income" game pass (set from ownership on join)
 	VIP = false,          -- "VIP Curator" game pass
 	DailyReward = { LastClaim = 0, Streak = 0 }, -- daily login reward tracking
+	GoalsCompleted = 0, -- how many "next goal" chain entries are done (drives the goal HUD)
+	MuseumTheme = "Default", -- selected buyable museum theme (re-skins the room)
+	OwnedThemes = { Default = true }, -- unlocked themes
+	LastSeen = 0, -- os.time() of last save; powers offline ("Welcome Back") earnings
 	ResearchedArtifacts = {},
 	Statistics = {
 		ArtifactsCollected = 0,
@@ -123,6 +127,8 @@ end
 
 function DataService.SaveData(player: Player)
 	if not playerData[player] then return end
+	-- Stamp the time so the next session can compute offline ("Welcome Back") earnings.
+	playerData[player].LastSeen = os.time()
 	-- Nothing to persist to in memory-only mode.
 	if not dataStoreAvailable then return end
 
@@ -161,6 +167,13 @@ function DataService.AddArtifact(player: Player, artifactId: string, containment
 	-- Record first-time discovery for the collection index
 	data.Discovered = data.Discovered or {}
 	data.Discovered[artifactId] = true
+end
+
+-- Wipe a player back to a fresh save and persist it (used by the owner reset).
+function DataService.ResetData(player: Player)
+	playerData[player] = deepCopy(DEFAULT_DATA)
+	DataService.SaveData(player)
+	return playerData[player]
 end
 
 function DataService.CleanupPlayer(player: Player)

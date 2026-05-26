@@ -7,6 +7,7 @@ local Players            = game:GetService("Players")
 local ReplicatedStorage  = game:GetService("ReplicatedStorage")
 local TweenService       = game:GetService("TweenService")
 local Lighting           = game:GetService("Lighting")
+local RunService         = game:GetService("RunService")
 
 local player    = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -23,6 +24,10 @@ local QueueStateEvent      = RemoteEvents:WaitForChild("QueueState")
 local OpenQueueEvent       = RemoteEvents:WaitForChild("OpenQueue")
 local LeaveQueueEvent      = RemoteEvents:WaitForChild("LeaveExpeditionQueue")
 local LaunchQueueEvent     = RemoteEvents:WaitForChild("LaunchExpeditionQueue")
+local WelcomeBackEvent     = RemoteEvents:WaitForChild("WelcomeBack")
+local GoalUpdatedEvent     = RemoteEvents:WaitForChild("GoalUpdated")
+local OpenShopEvent        = RemoteEvents:WaitForChild("OpenShop")
+local OpenDailyEvent       = RemoteEvents:WaitForChild("OpenDailyReward")
 
 local RemoteFunctions  = ReplicatedStorage:WaitForChild("RemoteFunctions")
 local GetInventoryRF   = RemoteFunctions:WaitForChild("GetInventory")
@@ -41,6 +46,9 @@ local GetPrestigeInfoRF = RemoteFunctions:WaitForChild("GetPrestigeInfo")
 local PrestigeRF        = RemoteFunctions:WaitForChild("Prestige")
 local GetAchievementsRF = RemoteFunctions:WaitForChild("GetAchievements")
 local GetShopRF         = RemoteFunctions:WaitForChild("GetShop")
+local GetGoalStatusRF   = RemoteFunctions:WaitForChild("GetGoalStatus")
+local GetThemesRF       = RemoteFunctions:WaitForChild("GetThemes")
+local SelectThemeRF     = RemoteFunctions:WaitForChild("SelectTheme")
 
 local MarketplaceService = game:GetService("MarketplaceService")
 
@@ -128,6 +136,32 @@ local function padding(parent: Instance, px: number)
 	return p
 end
 
+-- Give a GUI a quick "pop" (scale up then settle) — used to punch attention to
+-- a value that just changed (coins gained, etc.).
+local function pulse(gui: Instance, peak: number?)
+	local s = gui:FindFirstChildOfClass("UIScale")
+	if not s then
+		s = Instance.new("UIScale")
+		s.Parent = gui
+	end
+	s.Scale = 1
+	TweenService:Create(s, TweenInfo.new(0.10, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Scale = peak or 1.2 }):Play()
+	task.delay(0.10, function()
+		TweenService:Create(s, TweenInfo.new(0.18, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+	end)
+end
+
+-- Tactile press feedback: the button dips in on tap and springs back. Works on
+-- mouse + touch (Activated is cross-platform).
+local function tapBounce(btn: GuiButton)
+	local s = Instance.new("UIScale")
+	s.Parent = btn
+	btn.Activated:Connect(function()
+		s.Scale = 0.92
+		TweenService:Create(s, TweenInfo.new(0.22, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+	end)
+end
+
 -- =============================================
 --  ROOT GUI
 -- =============================================
@@ -184,6 +218,96 @@ dangerLabel.TextXAlignment = Enum.TextXAlignment.Left
 dangerLabel.Text = "Danger: 0 (Low)"
 dangerLabel.Parent = topBar
 
+-- ----- Goal HUD (top-left): the player's current "next goal" + progress -----
+local goalHud = Instance.new("Frame")
+goalHud.Name = "GoalHud"
+goalHud.Size = UDim2.new(0, 240, 0, 86)
+goalHud.Position = UDim2.new(0, 12, 0, 12)
+goalHud.BackgroundColor3 = THEME.Panel
+goalHud.BackgroundTransparency = 0.15
+goalHud.Visible = false -- shown once we get the first status
+goalHud.Parent = screenGui
+corner(goalHud, 10)
+padding(goalHud, 8)
+
+local goalHeader = Instance.new("TextLabel")
+goalHeader.Size = UDim2.new(1, 0, 0, 13)
+goalHeader.BackgroundTransparency = 1
+goalHeader.Font = Enum.Font.GothamBold
+goalHeader.TextSize = 11
+goalHeader.TextColor3 = THEME.Accent
+goalHeader.TextXAlignment = Enum.TextXAlignment.Left
+goalHeader.Text = "NEXT GOAL"
+goalHeader.Parent = goalHud
+
+local goalTitle = Instance.new("TextLabel")
+goalTitle.Size = UDim2.new(1, 0, 0, 18)
+goalTitle.Position = UDim2.new(0, 0, 0, 14)
+goalTitle.BackgroundTransparency = 1
+goalTitle.Font = Enum.Font.GothamBold
+goalTitle.TextSize = 15
+goalTitle.TextColor3 = THEME.Text
+goalTitle.TextXAlignment = Enum.TextXAlignment.Left
+goalTitle.TextTruncate = Enum.TextTruncate.AtEnd
+goalTitle.Text = "..."
+goalTitle.Parent = goalHud
+
+local goalBarBg = Instance.new("Frame")
+goalBarBg.Size = UDim2.new(1, -52, 0, 12)
+goalBarBg.Position = UDim2.new(0, 0, 0, 37)
+goalBarBg.BackgroundColor3 = THEME.PanelLight
+goalBarBg.Parent = goalHud
+corner(goalBarBg, 6)
+
+local goalFill = Instance.new("Frame")
+goalFill.Size = UDim2.new(0, 0, 1, 0)
+goalFill.BackgroundColor3 = THEME.Good
+goalFill.BorderSizePixel = 0
+goalFill.Parent = goalBarBg
+corner(goalFill, 6)
+
+local goalCount = Instance.new("TextLabel")
+goalCount.Size = UDim2.new(0, 48, 0, 18)
+goalCount.Position = UDim2.new(1, -48, 0, 34)
+goalCount.BackgroundTransparency = 1
+goalCount.Font = Enum.Font.GothamBold
+goalCount.TextSize = 12
+goalCount.TextColor3 = THEME.Text
+goalCount.TextXAlignment = Enum.TextXAlignment.Right
+goalCount.Text = ""
+goalCount.Parent = goalHud
+
+local goalReward = Instance.new("TextLabel")
+goalReward.Size = UDim2.new(1, 0, 0, 16)
+goalReward.Position = UDim2.new(0, 0, 0, 54)
+goalReward.BackgroundTransparency = 1
+goalReward.Font = Enum.Font.Gotham
+goalReward.TextSize = 13
+goalReward.TextColor3 = THEME.Gold
+goalReward.TextXAlignment = Enum.TextXAlignment.Left
+goalReward.Text = ""
+goalReward.Parent = goalHud
+
+local function updateGoalHud(status)
+	if not status then return end
+	goalHud.Visible = true
+	if status.AllDone then
+		goalHeader.Text = "GOALS"
+		goalTitle.Text = "All goals complete!"
+		goalCount.Text = "✓"
+		goalReward.Text = "Nice work, Curator."
+		goalFill.Size = UDim2.new(1, 0, 1, 0)
+		return
+	end
+	goalHeader.Text = string.format("NEXT GOAL  (%d/%d)", status.Index or 1, status.Total or 1)
+	goalTitle.Text = status.Title or "..."
+	local cur = status.Current or 0
+	local tgt = math.max(status.Target or 1, 1)
+	goalCount.Text = string.format("%d / %d", cur, tgt)
+	goalReward.Text = string.format("Reward: ● %d", status.Reward or 0)
+	goalFill.Size = UDim2.new(math.clamp(cur / tgt, 0, 1), 0, 1, 0)
+end
+
 -- ----- HUD action buttons (right edge — clear of the mobile joystick + jump button) -----
 local function makeActionButton(name: string, text: string, color: Color3, order: number)
 	local btn = Instance.new("TextButton")
@@ -199,6 +323,7 @@ local function makeActionButton(name: string, text: string, color: Color3, order
 	btn.AutoButtonColor = true
 	btn.Parent = screenGui
 	corner(btn, 10)
+	tapBounce(btn)
 	return btn
 end
 
@@ -277,6 +402,7 @@ local function makeMenuEntry(name: string, text: string, order: number)
 	btn.Text = text
 	btn.Parent = menuList
 	corner(btn, 8)
+	tapBounce(btn)
 	return btn
 end
 
@@ -808,10 +934,12 @@ end
 local function showBanner(text: string, bgColor: Color3, textColor: Color3, duration: number?)
 	local banner = Instance.new("TextLabel")
 	banner.Size = UDim2.new(0, 520, 0, 50)
-	banner.Position = UDim2.new(0.5, -260, 0.12, 0)
+	banner.AnchorPoint = Vector2.new(0.5, 0)
+	banner.Position = UDim2.new(0.5, 0, 0.10, 0)
 	banner.BackgroundColor3 = bgColor
-	banner.BackgroundTransparency = 0.15
+	banner.BackgroundTransparency = 1 -- tween in
 	banner.TextColor3 = textColor
+	banner.TextTransparency = 1
 	banner.Font = Enum.Font.GothamBold
 	banner.TextSize = 18
 	banner.TextWrapped = true
@@ -820,8 +948,18 @@ local function showBanner(text: string, bgColor: Color3, textColor: Color3, dura
 	banner.Parent = screenGui
 	corner(banner, 8)
 
+	-- Punch in: overshoot scale + fade up.
+	local scale = Instance.new("UIScale")
+	scale.Scale = 0.7
+	scale.Parent = banner
+	TweenService:Create(scale, TweenInfo.new(0.32, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+	TweenService:Create(banner, TweenInfo.new(0.2), { BackgroundTransparency = 0.15, TextTransparency = 0 }):Play()
+
 	task.delay(duration or 3, function()
-		if banner.Parent then banner:Destroy() end
+		if not banner.Parent then return end
+		local out = TweenService:Create(banner, TweenInfo.new(0.3), { BackgroundTransparency = 1, TextTransparency = 1 })
+		out:Play()
+		out.Completed:Connect(function() banner:Destroy() end)
 	end)
 end
 
@@ -832,8 +970,8 @@ local cachedCurrency = 0
 
 local function updateTopBar(info)
 	if info.Currency then
+		-- Set the true value; the count-up loop eases the displayed number to it.
 		cachedCurrency = info.Currency
-		currencyLabel.Text = "● " .. cachedCurrency
 	end
 	if info.IncomePerTick then
 		local visitors = info.VisitorCount or 0
@@ -1159,13 +1297,14 @@ end)
 -- ===== Daily reward =====
 local function updateDailyButton(status)
 	local claimable = status and status.Claimable
+	local nextReward = (status and status.NextReward) or 0
 	if claimable then
-		dailyButton.Text = "Claim Daily Reward!"
+		dailyButton.Text = string.format("Claim Daily Reward!  ● %d", nextReward)
 		dailyButton.BackgroundColor3 = THEME.Good
 		dailyButton.TextColor3 = Color3.fromRGB(20, 30, 20)
 	else
 		local hrs = status and math.ceil((status.SecondsUntilNext or 0) / 3600) or 0
-		dailyButton.Text = string.format("Daily Reward (%dh)", hrs)
+		dailyButton.Text = string.format("Daily Reward in %dh  (next: ● %d)", hrs, nextReward)
 		dailyButton.BackgroundColor3 = THEME.PanelLight
 		dailyButton.TextColor3 = THEME.Text
 	end
@@ -1175,16 +1314,28 @@ local function updateDailyButton(status)
 	menuButton.TextColor3 = claimable and Color3.fromRGB(20, 30, 20) or THEME.Text
 end
 
-dailyButton.Activated:Connect(function()
+local function claimDaily()
 	local result = ClaimDailyRF:InvokeServer()
 	if result and result.Granted then
-		showBanner(string.format("Daily reward claimed! +%d coins  (Day %d streak)", result.Amount, result.Streak),
-			Color3.fromRGB(20, 50, 30), THEME.Good, 3.5)
+		local msg
+		if result.ComebackBonus and result.ComebackBonus > 0 then
+			msg = string.format("Welcome back! Daily reward  +● %d  (incl. a +%d comeback bonus). Streak restarted at Day %d.",
+				result.Amount, result.ComebackBonus, result.Streak)
+		elseif result.Jackpot then
+			msg = string.format("★ DAY 7 JACKPOT! ★  +● %d   (Day %d streak)", result.Amount, result.Streak)
+		else
+			msg = string.format("Daily reward claimed!  +● %d   (Day %d streak)", result.Amount, result.Streak)
+		end
+		showBanner(msg, Color3.fromRGB(20, 50, 30), THEME.Good, 4)
+	elseif result and result.Reason then
+		-- e.g. claimed too recently (helpful when triggered from the hub pad)
+		showBanner("Daily reward: " .. result.Reason, THEME.PanelLight, THEME.Text, 2.5)
 	end
 	-- Re-fetch status to update the button (claimed -> cooldown)
 	local status = GetDailyStatusRF:InvokeServer()
 	updateDailyButton(status)
-end)
+end
+dailyButton.Activated:Connect(claimDaily)
 
 -- ===== Prestige =====
 local PRESTIGE_PCT = math.floor(Constants.PRESTIGE_INCOME_BONUS * 100)
@@ -1426,6 +1577,151 @@ end)
 MarketplaceService.PromptGamePassPurchaseFinished:Connect(function()
 	if shopPanel.Visible then refreshShop() end
 end)
+
+-- =============================================
+--  DECORATE (buyable museum themes)
+-- =============================================
+local decorateButton = makeMenuEntry("DecorateButton", "◆ Decorate", 9)
+
+local themePanel = Instance.new("Frame")
+themePanel.Name = "ThemePanel"
+themePanel.Size = UDim2.new(0, 460, 0, 460)
+themePanel.Position = UDim2.new(0.5, -230, 0.5, -230)
+themePanel.BackgroundColor3 = THEME.Panel
+themePanel.BackgroundTransparency = 0.05
+themePanel.Visible = false
+themePanel.Parent = screenGui
+corner(themePanel, 12)
+
+local themeTitle = Instance.new("TextLabel")
+themeTitle.Size = UDim2.new(1, -60, 0, 44)
+themeTitle.Position = UDim2.new(0, 16, 0, 8)
+themeTitle.BackgroundTransparency = 1
+themeTitle.TextColor3 = THEME.Gold
+themeTitle.Font = Enum.Font.GothamBold
+themeTitle.TextSize = 22
+themeTitle.TextXAlignment = Enum.TextXAlignment.Left
+themeTitle.Text = "Decorate — Museum Themes"
+themeTitle.Parent = themePanel
+
+local themeClose = Instance.new("TextButton")
+themeClose.Size = UDim2.new(0, 36, 0, 36)
+themeClose.Position = UDim2.new(1, -44, 0, 10)
+themeClose.BackgroundColor3 = THEME.Bad
+themeClose.TextColor3 = Color3.fromRGB(255, 255, 255)
+themeClose.Font = Enum.Font.GothamBold
+themeClose.TextSize = 20
+themeClose.Text = "X"
+themeClose.Parent = themePanel
+corner(themeClose, 8)
+
+local themeScroll = Instance.new("ScrollingFrame")
+themeScroll.Size = UDim2.new(1, -24, 1, -64)
+themeScroll.Position = UDim2.new(0, 12, 0, 56)
+themeScroll.BackgroundTransparency = 1
+themeScroll.BorderSizePixel = 0
+themeScroll.ScrollBarThickness = 6
+themeScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+themeScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+themeScroll.Parent = themePanel
+local themeLayout = Instance.new("UIListLayout")
+themeLayout.Padding = UDim.new(0, 8)
+themeLayout.SortOrder = Enum.SortOrder.LayoutOrder
+themeLayout.Parent = themeScroll
+
+local refreshThemes -- forward declaration (applyTheme refreshes after a change)
+
+local function applyTheme(themeId: string)
+	local res = SelectThemeRF:InvokeServer(themeId)
+	if res and res.Ok then
+		showBanner(res.Msg or "Applied", Color3.fromRGB(20, 40, 50), THEME.Good, 2.5)
+	elseif res then
+		showBanner(res.Msg or "Can't apply that", THEME.Bad, Color3.fromRGB(255, 255, 255), 2)
+	end
+	local info = GetInventoryRF:InvokeServer()
+	if info then updateTopBar(info) end -- balance changed if it was a purchase
+	refreshThemes()
+end
+
+local function themeRow(entry, order: number)
+	local row = Instance.new("Frame")
+	row.Size = UDim2.new(1, -6, 0, 56)
+	row.LayoutOrder = order
+	row.BackgroundColor3 = THEME.PanelLight
+	corner(row, 8)
+	padding(row, 8)
+
+	local nameLabel = Instance.new("TextLabel")
+	nameLabel.Size = UDim2.new(1, -120, 1, 0)
+	nameLabel.BackgroundTransparency = 1
+	nameLabel.Font = Enum.Font.GothamBold
+	nameLabel.TextSize = 16
+	nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+	nameLabel.TextColor3 = THEME.Text
+	nameLabel.Text = entry.Name
+	nameLabel.Parent = row
+
+	local btn = Instance.new("TextButton")
+	btn.Size = UDim2.new(0, 104, 0, 38)
+	btn.Position = UDim2.new(1, -104, 0.5, -19)
+	btn.Font = Enum.Font.GothamBold
+	btn.TextSize = 14
+	corner(btn, 6)
+	btn.Parent = row
+
+	if entry.Selected then
+		btn.Text = "Equipped"
+		btn.BackgroundColor3 = THEME.Good
+		btn.TextColor3 = Color3.fromRGB(20, 40, 25)
+		btn.AutoButtonColor = false
+	elseif entry.Owned then
+		btn.Text = "Apply"
+		btn.BackgroundColor3 = THEME.Accent
+		btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+		btn.Activated:Connect(function() applyTheme(entry.Id) end)
+	else
+		btn.Text = "● " .. entry.Cost
+		btn.BackgroundColor3 = THEME.Gold
+		btn.TextColor3 = Color3.fromRGB(40, 30, 10)
+		btn.Activated:Connect(function() applyTheme(entry.Id) end)
+	end
+
+	row.Parent = themeScroll
+end
+
+function refreshThemes()
+	for _, c in ipairs(themeScroll:GetChildren()) do
+		if c:IsA("Frame") then c:Destroy() end
+	end
+	local data = GetThemesRF:InvokeServer()
+	if not data then return end
+	for i, entry in ipairs(data.Themes) do
+		themeRow(entry, i)
+	end
+end
+
+decorateButton.Activated:Connect(function()
+	menuPanel.Visible = false
+	inventoryPanel.Visible = false
+	collectionPanel.Visible = false
+	leaderboardPanel.Visible = false
+	prestigePanel.Visible = false
+	achPanel.Visible = false
+	shopPanel.Visible = false
+	themePanel.Visible = not themePanel.Visible
+	if themePanel.Visible then refreshThemes() end
+end)
+
+themeClose.Activated:Connect(function()
+	themePanel.Visible = false
+end)
+
+-- Opening any other panel hides the theme panel (keeps panels mutually exclusive).
+for _, b in ipairs({ inventoryButton, myMuseumButton, museumButton, collectionButton, achievementsButton, leaderboardButton, prestigeButton, visitButton, shopButton }) do
+	b.Activated:Connect(function()
+		themePanel.Visible = false
+	end)
+end
 
 museumButton.Activated:Connect(function()
 	local ok, msg = UpgradeMuseumRF:InvokeServer()
@@ -1691,6 +1987,190 @@ player.CharacterAdded:Connect(function()
 	end
 end)
 
+-- =============================================
+--  JUICE: feedback that makes actions feel good
+-- =============================================
+
+-- ----- Camera shake (trauma model: shake = trauma², decays over time) -----
+local shakeTrauma = 0
+local SHAKE_OFFSET = 0.7   -- studs of positional jitter at full trauma
+local SHAKE_ANGLE  = math.rad(5) -- roll at full trauma
+local function addShake(amount: number)
+	shakeTrauma = math.clamp(shakeTrauma + amount, 0, 1)
+end
+RunService:BindToRenderStep("JuiceShake", Enum.RenderPriority.Camera.Value + 1, function(dt)
+	if shakeTrauma <= 0 then return end
+	shakeTrauma = math.max(0, shakeTrauma - dt * 1.5)
+	local cam = workspace.CurrentCamera
+	if not cam then return end
+	local s = shakeTrauma * shakeTrauma
+	local ox = (math.random() * 2 - 1) * SHAKE_OFFSET * s
+	local oy = (math.random() * 2 - 1) * SHAKE_OFFSET * s
+	local roll = (math.random() * 2 - 1) * SHAKE_ANGLE * s
+	cam.CFrame = cam.CFrame * CFrame.new(ox, oy, 0) * CFrame.Angles(0, 0, roll)
+end)
+
+-- ----- Currency count-up: the number eases toward its true value -----
+local shownCurrency = 0
+RunService.RenderStepped:Connect(function(dt)
+	if math.abs(shownCurrency - cachedCurrency) < 0.5 then
+		if shownCurrency ~= cachedCurrency then
+			shownCurrency = cachedCurrency
+			currencyLabel.Text = "● " .. cachedCurrency
+		end
+		return
+	end
+	shownCurrency += (cachedCurrency - shownCurrency) * math.clamp(dt * 9, 0, 1)
+	currencyLabel.Text = "● " .. math.floor(shownCurrency + 0.5)
+end)
+
+-- ----- Full-screen color flash (danger = red, win = green) -----
+local function flashScreen(color: Color3, strength: number?, dur: number?)
+	local f = Instance.new("Frame")
+	f.Size = UDim2.new(1, 0, 1, 0)
+	f.BackgroundColor3 = color
+	f.BackgroundTransparency = 1 - (strength or 0.5)
+	f.BorderSizePixel = 0
+	f.ZIndex = 45
+	f.Parent = screenGui
+	local t = TweenService:Create(f, TweenInfo.new(dur or 0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { BackgroundTransparency = 1 })
+	t:Play()
+	t.Completed:Connect(function() f:Destroy() end)
+end
+
+-- ----- Coins fly up into the wallet (top bar), then the counter pops -----
+local function coinsToWallet(n: number)
+	n = math.clamp(n, 1, 8)
+	for i = 1, n do
+		local coin = Instance.new("TextLabel")
+		coin.AnchorPoint = Vector2.new(0.5, 0.5)
+		coin.Size = UDim2.new(0, 26, 0, 26)
+		coin.BackgroundTransparency = 1
+		coin.Text = "●"
+		coin.TextColor3 = THEME.Gold
+		coin.TextStrokeTransparency = 0.3
+		coin.Font = Enum.Font.GothamBold
+		coin.TextSize = 24
+		coin.ZIndex = 55
+		coin.Position = UDim2.new(0.5 + (math.random() - 0.5) * 0.14, 0, 0.64 + (math.random() - 0.5) * 0.06, 0)
+		coin.Parent = screenGui
+		task.delay((i - 1) * 0.05, function()
+			local t = TweenService:Create(coin, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+				Position = UDim2.new(0.5, -120, 0, 26),
+				Size = UDim2.new(0, 14, 0, 14),
+				TextTransparency = 0.1,
+			})
+			t:Play()
+			t.Completed:Connect(function()
+				coin:Destroy()
+				pulse(currencyLabel, 1.18)
+			end)
+		end)
+	end
+end
+
+-- Centralized: ANY increase in coins (income tick, extraction, daily, goal,
+-- offline) makes coins fly to the wallet — number of coins scales with the gain.
+-- This is the single source of "coin gathering" feedback, so individual reward
+-- handlers don't each have to trigger it.
+local lastKnownCurrency: number? = nil
+RunService.Heartbeat:Connect(function()
+	if lastKnownCurrency == nil then
+		lastKnownCurrency = cachedCurrency -- baseline; no burst on first sync/join
+		return
+	end
+	if cachedCurrency > lastKnownCurrency then
+		local delta = cachedCurrency - lastKnownCurrency
+		coinsToWallet(math.clamp(math.floor(1 + delta / 40), 1, 8))
+	end
+	lastKnownCurrency = cachedCurrency
+end)
+
+-- ----- Monster-proximity dread: a red edge vignette + quickening heartbeat -----
+local dangerVignette = Instance.new("Frame")
+dangerVignette.Name = "DangerVignette"
+dangerVignette.Size = UDim2.new(1, 0, 1, 0)
+dangerVignette.BackgroundColor3 = Color3.fromRGB(140, 0, 0)
+dangerVignette.BackgroundTransparency = 1
+dangerVignette.BorderSizePixel = 0
+dangerVignette.ZIndex = 40
+dangerVignette.Visible = false
+dangerVignette.Parent = screenGui
+do
+	local vg = Instance.new("UIGradient")
+	vg.Rotation = 90 -- vertical: opaque at top/bottom edges, clear through the middle
+	vg.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0),
+		NumberSequenceKeypoint.new(0.35, 1),
+		NumberSequenceKeypoint.new(0.65, 1),
+		NumberSequenceKeypoint.new(1, 0),
+	})
+	vg.Parent = dangerVignette
+end
+
+local DANGER_RANGE = 45 -- start sensing dread within this many studs
+local DANGER_CLOSE = 6  -- point-blank
+
+local function nearestMonsterDist(): number
+	local char = player.Character
+	local hrp = char and char:FindFirstChild("HumanoidRootPart")
+	if not hrp then return math.huge end
+	local folder = workspace:FindFirstChild("ExpeditionMonsters")
+	if not folder then return math.huge end
+	local best = math.huge
+	for _, m in ipairs(folder:GetChildren()) do
+		local pos
+		if m:IsA("Model") then
+			pos = m:GetPivot().Position
+		elseif m:IsA("BasePart") then
+			pos = m.Position
+		end
+		if pos then
+			local d = (pos - hrp.Position).Magnitude
+			if d < best then best = d end
+		end
+	end
+	return best
+end
+
+task.spawn(function()
+	local phase = 0
+	while true do
+		task.wait(0.06)
+		if not inDarkness then
+			if dangerVignette.Visible then
+				dangerVignette.Visible = false
+				dangerVignette.BackgroundTransparency = 1
+			end
+			phase = 0
+		else
+			local dist = nearestMonsterDist()
+			local prox = math.clamp((DANGER_RANGE - dist) / (DANGER_RANGE - DANGER_CLOSE), 0, 1)
+			if prox <= 0.02 then
+				dangerVignette.Visible = false
+			else
+				-- Heartbeat: a slow "lub-dub" that quickens as it nears (~1.1 Hz
+				-- far -> ~2.6 Hz point-blank), with sharp spikes so it reads as a
+				-- pulse, not a steady glow.
+				local rate = 1.1 + prox * 1.5 -- beats per second
+				phase = (phase + 0.06 * rate) % 1
+				local function thump(x: number): number
+					return math.exp(-(x * x) / 0.004) -- sharp gaussian flash
+				end
+				local b = math.clamp(thump(phase) + 0.6 * thump(phase - 0.18), 0, 1) -- lub-dub
+				local maxAlpha = 0.6 * prox
+				local alpha = maxAlpha * (0.18 + 0.82 * b) -- deep throb: faint between beats, bright on the beat
+				dangerVignette.Visible = true
+				dangerVignette.BackgroundTransparency = 1 - alpha
+				-- Each beat also lands as a felt thump when it's close.
+				if prox > 0.35 then
+					addShake(b * prox * 0.05)
+				end
+			end
+		end
+	end
+end)
+
 -- Server tells us about expedition progress (entered / carrying / extracted / left)
 ExpeditionStateEvent.OnClientEvent:Connect(function(info)
 	local state = info.State
@@ -1710,9 +2190,13 @@ ExpeditionStateEvent.OnClientEvent:Connect(function(info)
 	elseif state == "AlreadyCarrying" then
 		showBanner("You can only carry one artifact at a time!", THEME.PanelLight, THEME.Text, 2)
 	elseif state == "Stolen" then
+		addShake(0.8)
+		flashScreen(Color3.fromRGB(150, 20, 20), 0.55, 0.5)
 		showBanner(string.format("A monster snatched %s and bolted! Chase the glowing thief down and tackle it!", info.ArtifactName or "your artifact"),
 			Color3.fromRGB(60, 20, 20), Color3.fromRGB(255, 170, 170), 4)
 	elseif state == "Recovered" then
+		addShake(0.35)
+		flashScreen(Color3.fromRGB(40, 160, 80), 0.3, 0.45)
 		showBanner(string.format("You wrenched %s back! Now get it to the EXTRACTION pad!", info.ArtifactName or "your artifact"),
 			Color3.fromRGB(20, 40, 30), Color3.fromRGB(160, 255, 200), 3)
 	elseif state == "StealEscaped" then
@@ -1722,6 +2206,8 @@ ExpeditionStateEvent.OnClientEvent:Connect(function(info)
 		expeditionButton.Visible = true
 		leaveButton.Visible = false
 		exitDarkness()
+		addShake(0.3)
+		flashScreen(Color3.fromRGB(40, 170, 90), 0.35, 0.5)
 		showBanner(string.format("Extracted %s! Added to your collection.", info.ArtifactName or "an artifact"),
 			Color3.fromRGB(20, 50, 30), THEME.Good, 3.5)
 		-- Reflect the new artifact + extraction reward
@@ -1729,7 +2215,13 @@ ExpeditionStateEvent.OnClientEvent:Connect(function(info)
 		if data then updateTopBar(data) end
 		if inventoryPanel.Visible then refreshInventory() end
 		if collectionPanel.Visible then refreshCollection() end
+	elseif state == "Scared" then
+		-- empty-handed catch: a jolt of fear, no penalty (can repeat, so no banner)
+		addShake(0.45)
+		flashScreen(Color3.fromRGB(150, 20, 20), 0.35, 0.3)
 	elseif state == "Dropped" then
+		addShake(0.8)
+		flashScreen(Color3.fromRGB(150, 20, 20), 0.55, 0.5)
 		showBanner("A monster caught you! You dropped the artifact — grab it and run!",
 			Color3.fromRGB(60, 20, 20), Color3.fromRGB(255, 160, 160), 3)
 	elseif state == "Left" then
@@ -1744,9 +2236,39 @@ end)
 --  INCOME + CHAOS EVENT HANDLERS
 -- =============================================
 IncomeEvent.OnClientEvent:Connect(function(amount: number)
-	cachedCurrency += amount
-	currencyLabel.Text = "● " .. cachedCurrency
+	cachedCurrency += amount -- count-up loop eases the displayed number
+	pulse(currencyLabel, 1.12)
 	showFloatingText("+" .. amount .. " coins", THEME.Good)
+end)
+
+-- Offline earnings: the coins were already granted server-side, so just refresh
+-- the balance and celebrate it so coming back feels rewarding.
+WelcomeBackEvent.OnClientEvent:Connect(function(info)
+	local amount = info.Amount or 0
+	local secs = info.SecondsAway or 0
+	local hrs = math.floor(secs / 3600)
+	local mins = math.floor((secs % 3600) / 60)
+	local awayText = (hrs > 0) and string.format("%dh %dm", hrs, mins) or string.format("%dm", mins)
+
+	local data = GetInventoryRF:InvokeServer()
+	if data then
+		updateTopBar(data)
+	end
+	showBanner(string.format("Welcome back! Your museum earned  ● %d  while you were away (%s).", amount, awayText),
+		Color3.fromRGB(38, 32, 12), Color3.fromRGB(255, 225, 120), 6)
+end)
+
+-- "Next goal" HUD: the server pushes a Status to redraw the bar, or a Completed
+-- payload when a goal is finished (coins already granted server-side).
+GoalUpdatedEvent.OnClientEvent:Connect(function(payload)
+	if not payload then return end
+	if payload.Completed then
+		addShake(0.3)
+		showBanner(string.format("Goal complete: %s!   +● %d", payload.Title or "", payload.Reward or 0),
+			Color3.fromRGB(20, 50, 30), THEME.Good, 4)
+	elseif payload.Status then
+		updateGoalHud(payload.Status)
+	end
 end)
 
 local chaosHandlers = {}
@@ -1775,8 +2297,8 @@ end
 
 chaosHandlers.StealIncome = function(data)
 	showFloatingText("King's Coin stole " .. (data.Amount or "?") .. " coins!", THEME.Bad, 0.65)
-	cachedCurrency = math.max(0, cachedCurrency - (data.Amount or 0))
-	currencyLabel.Text = "● " .. cachedCurrency
+	cachedCurrency = math.max(0, cachedCurrency - (data.Amount or 0)) -- count-up loop eases it down
+	flashScreen(Color3.fromRGB(150, 20, 20), 0.3, 0.4)
 end
 
 chaosHandlers.GlitchReality = function(data)
@@ -1851,6 +2373,17 @@ OpenInventoryEvent.OnClientEvent:Connect(function()
 	refreshInventory()
 end)
 
+-- Hub kiosks: the Shop / Daily Reward pads open their flows.
+OpenShopEvent.OnClientEvent:Connect(function()
+	themePanel.Visible = false
+	inventoryPanel.Visible = false
+	shopPanel.Visible = true
+	refreshShop()
+end)
+OpenDailyEvent.OnClientEvent:Connect(function()
+	claimDaily()
+end)
+
 -- The server tells us our museum changed (displayed artifacts / containment).
 -- Keep the top bar accurate, and refresh the panel if it's open.
 MuseumChangedEvent.OnClientEvent:Connect(function()
@@ -1879,6 +2412,9 @@ task.spawn(function()
 	updateDailyButton(status)
 	-- Prestige button label (shows current level)
 	refreshPrestige()
+	-- Current "next goal" HUD
+	local goalStatus = GetGoalStatusRF:InvokeServer()
+	updateGoalHud(goalStatus)
 end)
 
 print("[Museum of Cursed Things] Client initialized.")

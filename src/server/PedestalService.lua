@@ -40,6 +40,101 @@ local function rarityColor(rarity: string): Color3
 	return (info and info.Color) or Color3.fromRGB(255, 255, 255)
 end
 
+-- Velvet-rope stanchions around the pedestal + a tilted placard (name / rarity /
+-- lore) in front of it. Returns a static Model so it can be cleaned up with the
+-- exhibit. Static (NOT parented to the spinning artifact) so it doesn't rotate.
+local STANCHION_COLOR = Color3.fromRGB(176, 148, 92)
+local ROPE_COLOR      = Color3.fromRGB(110, 24, 34)
+
+local function makeExhibitDecor(museum, pedestal: BasePart, def): Model
+	local decor = Instance.new("Model")
+	decor.Name = "ExhibitDecor"
+
+	local floorY = museum.Origin.Position.Y
+	local px, pz = pedestal.Position.X, pedestal.Position.Z
+	local r = 2.4 -- stanchion ring radius from pedestal center
+
+	local function block(name: string, size: Vector3, pos: Vector3, color: Color3, material: Enum.Material): BasePart
+		local p = Instance.new("Part")
+		p.Name = name
+		p.Anchored = true
+		p.CanCollide = false
+		p.Size = size
+		p.Position = pos
+		p.Color = color
+		p.Material = material
+		p.TopSurface = Enum.SurfaceType.Smooth
+		p.BottomSurface = Enum.SurfaceType.Smooth
+		p.Parent = decor
+		return p
+	end
+
+	-- Four corner posts (+ rounded caps).
+	local postH = 2.8
+	local corners = {
+		Vector3.new(px - r, 0, pz - r), Vector3.new(px + r, 0, pz - r),
+		Vector3.new(px + r, 0, pz + r), Vector3.new(px - r, 0, pz + r),
+	}
+	for _, c in ipairs(corners) do
+		block("Stanchion", Vector3.new(0.3, postH, 0.3), Vector3.new(c.X, floorY + postH / 2, c.Z), STANCHION_COLOR, Enum.Material.Metal)
+		local cap = block("StanchionCap", Vector3.new(0.5, 0.5, 0.5), Vector3.new(c.X, floorY + postH, c.Z), STANCHION_COLOR, Enum.Material.Metal)
+		cap.Shape = Enum.PartType.Ball
+	end
+
+	-- Four ropes joining the posts into a square, slung near the top.
+	local ropeY = floorY + postH - 0.3
+	block("Rope", Vector3.new(0.18, 0.18, 2 * r), Vector3.new(px - r, ropeY, pz), ROPE_COLOR, Enum.Material.SmoothPlastic)
+	block("Rope", Vector3.new(0.18, 0.18, 2 * r), Vector3.new(px + r, ropeY, pz), ROPE_COLOR, Enum.Material.SmoothPlastic)
+	block("Rope", Vector3.new(2 * r, 0.18, 0.18), Vector3.new(px, ropeY, pz - r), ROPE_COLOR, Enum.Material.SmoothPlastic)
+	block("Rope", Vector3.new(2 * r, 0.18, 0.18), Vector3.new(px, ropeY, pz + r), ROPE_COLOR, Enum.Material.SmoothPlastic)
+
+	-- Placard: a VERTICAL plaque on a short post, facing the viewer (+Z). Must be
+	-- a vertical face — a Top-face SurfaceGui renders the text rotated 90°.
+	local color = rarityColor(def.Rarity)
+	local frontZ = pz + r + 1.6
+	block("PlacardStand", Vector3.new(0.3, 1.3, 0.3), Vector3.new(px, floorY + 0.65, frontZ), STANCHION_COLOR, Enum.Material.Metal)
+	local board = block("Placard", Vector3.new(3, 1.5, 0.14), Vector3.new(px, floorY + 2.05, frontZ), Color3.fromRGB(26, 22, 30), Enum.Material.Metal)
+
+	local gui = Instance.new("SurfaceGui")
+	gui.Face = Enum.NormalId.Back -- +Z, toward the viewer (upright text, like the wall sign)
+	gui.LightInfluence = 0
+	gui.Parent = board
+
+	local nameLabel = Instance.new("TextLabel")
+	nameLabel.Size = UDim2.fromScale(0.94, 0.4)
+	nameLabel.Position = UDim2.fromScale(0.03, 0.02)
+	nameLabel.BackgroundTransparency = 1
+	nameLabel.Font = Enum.Font.GothamBold
+	nameLabel.Text = def.Name
+	nameLabel.TextColor3 = color
+	nameLabel.TextScaled = true
+	nameLabel.Parent = gui
+
+	local rarityLabel = Instance.new("TextLabel")
+	rarityLabel.Size = UDim2.fromScale(0.94, 0.18)
+	rarityLabel.Position = UDim2.fromScale(0.03, 0.42)
+	rarityLabel.BackgroundTransparency = 1
+	rarityLabel.Font = Enum.Font.GothamMedium
+	rarityLabel.Text = string.upper(def.Rarity or "")
+	rarityLabel.TextColor3 = color
+	rarityLabel.TextTransparency = 0.25
+	rarityLabel.TextScaled = true
+	rarityLabel.Parent = gui
+
+	local descLabel = Instance.new("TextLabel")
+	descLabel.Size = UDim2.fromScale(0.94, 0.34)
+	descLabel.Position = UDim2.fromScale(0.03, 0.62)
+	descLabel.BackgroundTransparency = 1
+	descLabel.Font = Enum.Font.Gotham
+	descLabel.Text = def.Description or ""
+	descLabel.TextColor3 = Color3.fromRGB(206, 200, 214)
+	descLabel.TextWrapped = true
+	descLabel.TextScaled = true
+	descLabel.Parent = gui
+
+	return decor
+end
+
 local function spawnArtifactDisplay(museum, pedestal: BasePart, def, artifactId: string?)
 	local base = pedestal.Position + Vector3.new(0, pedestal.Size.Y / 2 + 3, 0)
 	local color = rarityColor(def.Rarity)
@@ -85,7 +180,12 @@ local function spawnArtifactDisplay(museum, pedestal: BasePart, def, artifactId:
 
 	ModelFactory.Place(visual, CFrame.new(base))
 	visual.Parent = museum.Model
-	return visual, base
+
+	-- Stanchions + placard (static, alongside the museum model so they don't spin).
+	local decor = makeExhibitDecor(museum, pedestal, def)
+	decor.Parent = museum.Model
+
+	return visual, base, decor
 end
 
 -- =============================================
@@ -143,9 +243,10 @@ local function refreshPlayer(player: Player)
 	-- Add pedestals if the museum has leveled up since last refresh
 	ensurePedestals(player, data, museum)
 
-	-- Clear current display models
+	-- Clear current display models (+ their stanchions/placard decor)
 	for _, d in ipairs(museum.DisplayParts) do
 		d.Visual:Destroy()
+		if d.Decor then d.Decor:Destroy() end
 	end
 	table.clear(museum.DisplayParts)
 	table.clear(museum.Assignments)
@@ -166,8 +267,8 @@ local function refreshPlayer(player: Player)
 		local prompt = pedestal:FindFirstChildOfClass("ProximityPrompt")
 		local entry = displayed[pedIdx]
 		if entry then
-			local visual, base = spawnArtifactDisplay(museum, pedestal, entry.Def, entry.ArtifactId)
-			table.insert(museum.DisplayParts, { Visual = visual, Base = base })
+			local visual, base, decor = spawnArtifactDisplay(museum, pedestal, entry.Def, entry.ArtifactId)
+			table.insert(museum.DisplayParts, { Visual = visual, Base = base, Decor = decor })
 			museum.Assignments[pedIdx] = entry.Index
 			if prompt then
 				prompt.ActionText = "Remove"
@@ -250,8 +351,30 @@ end
 
 local function cleanupMuseum(player: Player)
 	local museum = museums[player]
-	if museum and museum.Model then
-		museum.Model:Destroy()
+	if museum then
+		-- Send any VISITORS standing in this museum to the hub before it's
+		-- destroyed, so a leaving host doesn't strand them floating in empty space.
+		if museum.Origin then
+			local cx = museum.Origin.Position.X
+			local cz = museum.Origin.Position.Z
+			local halfX = MuseumBuilder.ROOM_X / 2 + 12
+			local halfZ = MuseumBuilder.ROOM_Z / 2 + 12
+			for _, other in ipairs(Players:GetPlayers()) do
+				if other ~= player then
+					local char = other.Character
+					local hrp = char and char:FindFirstChild("HumanoidRootPart")
+					if hrp then
+						local pos = hrp.Position
+						if math.abs(pos.X - cx) <= halfX and math.abs(pos.Z - cz) <= halfZ then
+							MuseumSignals.GoToHubRequested:Fire(other)
+						end
+					end
+				end
+			end
+		end
+		if museum.Model then
+			museum.Model:Destroy()
+		end
 	end
 	museums[player] = nil
 end

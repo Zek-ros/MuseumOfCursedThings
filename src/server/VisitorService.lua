@@ -4,14 +4,20 @@
 -- always matches the visitor income. Visitors are body+head placeholder figures
 -- (ModelFactory) that can be swapped for real character models by asset id.
 
-local Players       = game:GetService("Players")
+local Players           = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local DataService     = require(script.Parent.DataService)
 local PedestalService = require(script.Parent.PedestalService)
 local MuseumBuilder   = require(script.Parent.MuseumBuilder)
 local MuseumSignals   = require(script.Parent.MuseumSignals)
 local ModelFactory    = require(script.Parent.ModelFactory)
-local MuseumStats     = require(game:GetService("ReplicatedStorage").Shared.MuseumStats)
+local MuseumStats     = require(ReplicatedStorage.Shared.MuseumStats)
+local ArtifactData    = require(ReplicatedStorage.Shared.ArtifactData)
+local Constants       = require(ReplicatedStorage.Shared.Constants)
+
+-- Artifacts at or above this DangerLevel (1–8) make visitors recoil.
+local DANGER_REACT = 5
 
 local VisitorService = {}
 
@@ -53,40 +59,154 @@ local function makeVisitor(museum)
 	return visitor
 end
 
--- Per-visitor movement loop. Reads entry.State so panic can interrupt wandering.
+-- Keep a point inside the room's walkable area.
+local function clampToRoom(museum, pos: Vector3): Vector3
+	local o = museum.Origin.Position
+	local hx = (MuseumBuilder.ROOM_X / 2) - 4
+	local hz = (MuseumBuilder.ROOM_Z / 2) - 4
+	return Vector3.new(
+		math.clamp(pos.X, o.X - hx, o.X + hx),
+		pos.Y,
+		math.clamp(pos.Z, o.Z - hz, o.Z + hz))
+end
+
+-- The currently-displayed exhibits: { Pos = pedestal pos, Def = artifact def }.
+local function getExhibits(player: Player, museum)
+	local data = DataService.GetData(player)
+	if not data then return {} end
+	local list = {}
+	for pedIdx, artifactIndex in pairs(museum.Assignments) do
+		local pedestal = museum.Pedestals[pedIdx]
+		local art = data.Artifacts[artifactIndex]
+		if pedestal and art then
+			local def = ArtifactData.Artifacts[art.ArtifactId]
+			if def then
+				table.insert(list, { Pos = pedestal.Position, Def = def })
+			end
+		end
+	end
+	return list
+end
+
+-- Pick where a visitor goes next: usually a viewing spot around an exhibit
+-- (weighted by rarity so rare pieces draw crowds), sometimes a random stroll.
+local function pickDestination(player: Player, museum)
+	local floorY = museum.Origin.Position.Y + 1.6
+	local exhibits = getExhibits(player, museum)
+	if #exhibits > 0 and math.random() < 0.75 then
+		local totalW = 0
+		for _, e in ipairs(exhibits) do
+			e.W = Constants.VISITOR_APPEAL_WEIGHT[e.Def.Rarity] or 1
+			totalW += e.W
+		end
+		local roll = math.random() * totalW
+		local chosen = exhibits[#exhibits]
+		for _, e in ipairs(exhibits) do
+			roll -= e.W
+			if roll <= 0 then
+				chosen = e
+				break
+			end
+		end
+		-- Stand somewhere on the ring around the pedestal (just outside the ropes).
+		local angle = math.random() * math.pi * 2
+		local radius = 4.0 + math.random() * 1.6
+		local pos = clampToRoom(museum, Vector3.new(
+			chosen.Pos.X + math.cos(angle) * radius, floorY,
+			chosen.Pos.Z + math.sin(angle) * radius))
+		return { Pos = pos, FacePos = chosen.Pos, Danger = (chosen.Def.DangerLevel or 0) >= DANGER_REACT }
+	end
+	return { Pos = randomFloorCFrame(museum).Position }
+end
+
+-- Turn the visitor to face a point (horizontal only).
+local function faceTowards(entry, facePos: Vector3)
+	local model = entry.Model
+	if not (model and model.Parent) then return end
+	local p = model:GetPivot().Position
+	local look = Vector3.new(facePos.X, p.Y, facePos.Z)
+	if (look - p).Magnitude > 0.1 then
+		model:PivotTo(CFrame.lookAt(p, look))
+	end
+end
+
+-- Brief startled "!" above the visitor's head.
+local function reactScared(entry)
+	local model = entry.Model
+	if not (model and model.Parent) then return end
+	local head = model:FindFirstChild("Head") or ModelFactory.AnchorPart(model)
+	if not head then return end
+	local bb = Instance.new("BillboardGui")
+	bb.Size = UDim2.new(0, 28, 0, 28)
+	bb.StudsOffset = Vector3.new(0, 2.6, 0)
+	bb.MaxDistance = 50
+	bb.Adornee = head
+	local lbl = Instance.new("TextLabel")
+	lbl.Size = UDim2.fromScale(1, 1)
+	lbl.BackgroundTransparency = 1
+	lbl.Text = "!"
+	lbl.TextColor3 = Color3.fromRGB(255, 80, 80)
+	lbl.TextStrokeTransparency = 0.4
+	lbl.Font = Enum.Font.GothamBlack
+	lbl.TextScaled = true
+	lbl.Parent = bb
+	bb.Parent = model
+	task.delay(1.2, function() bb:Destroy() end)
+end
+
+-- Walk the visitor to a point, facing the travel direction. Returns false if it
+-- was interrupted (panic) or the model went away, true if it arrived.
+local function walkTo(entry, targetPos: Vector3, speed: number): boolean
+	local model = entry.Model
+	if not (model and model.Parent) then return false end
+	local start = model:GetPivot()
+	local flat = Vector3.new(targetPos.X - start.Position.X, 0, targetPos.Z - start.Position.Z)
+	local dist = flat.Magnitude
+	if dist < 0.4 then return true end
+	local dir = flat.Unit
+	local goal = CFrame.lookAt(targetPos, targetPos + dir)
+	local startedPanicked = entry.State == "panic"
+	local dur = math.clamp(dist / speed, 0.2, 6)
+	local t = 0
+	while t < dur do
+		if not (model and model.Parent) then return false end
+		local dt = task.wait()
+		t += dt
+		model:PivotTo(start:Lerp(goal, math.min(t / dur, 1)))
+		if entry.State == "panic" and not startedPanicked then return false end
+	end
+	return true
+end
+
+-- Per-visitor behavior loop. Strolls to exhibits to admire them (or flees on
+-- panic). Reads entry.State so panic interrupts whatever they're doing.
 local function runWander(entry, player: Player)
 	task.spawn(function()
 		while entry.Model and entry.Model.Parent do
 			local museum = PedestalService.GetMuseum(player)
 			if not museum then break end
 
-			local start = entry.Model:GetPivot()
-			local target, speed
-			local startedPanicked = entry.State == "panic"
-			if startedPanicked then
-				target = entry.FleeTarget or randomFloorCFrame(museum)
-				speed = 26
+			if entry.State == "panic" then
+				local target = entry.FleeTarget or randomFloorCFrame(museum)
+				walkTo(entry, target.Position, 26)
+				task.wait(0.2)
 			else
-				target = randomFloorCFrame(museum)
-				speed = 8
+				local dest = pickDestination(player, museum)
+				local arrived = walkTo(entry, dest.Pos, 8)
+				if arrived and entry.State ~= "panic" then
+					if dest.FacePos then
+						faceTowards(entry, dest.FacePos)
+						if dest.Danger then
+							reactScared(entry)
+							task.wait(math.random(8, 14) / 10) -- recoil: a short, uneasy pause
+						else
+							task.wait(math.random(25, 55) / 10) -- admire a while
+						end
+					else
+						task.wait(math.random(10, 22) / 10)
+					end
+				end
 			end
-
-			local dir = target.Position - start.Position
-			if dir.Magnitude < 0.1 then dir = start.LookVector end
-			local goal = CFrame.lookAt(target.Position, target.Position + dir)
-			local dur = math.clamp(dir.Magnitude / speed, 0.25, 4)
-
-			local t = 0
-			while t < dur do
-				if not (entry.Model and entry.Model.Parent) then return end
-				local dt = task.wait()
-				t += dt
-				entry.Model:PivotTo(start:Lerp(goal, math.min(t / dur, 1)))
-				-- React quickly if panic kicks in mid-stroll
-				if entry.State == "panic" and not startedPanicked then break end
-			end
-
-			task.wait(if entry.State == "panic" then 0.2 else math.random(10, 30) / 10)
 		end
 	end)
 end
@@ -164,5 +284,24 @@ end
 -- =============================================
 MuseumSignals.MuseumChanged.Event:Connect(VisitorService.Sync)
 Players.PlayerRemoving:Connect(cleanup)
+
+-- Initial crowd on join. Sync otherwise only runs on MuseumChanged (display
+-- changes), so without this a player's visitors wouldn't appear until they
+-- touched a pedestal. Poll until the museum is built (independent of load order).
+local function spawnInitialCrowd(player: Player)
+	for _ = 1, 150 do
+		if PedestalService.GetMuseum(player) and DataService.GetData(player) then
+			VisitorService.Sync(player)
+			return
+		end
+		task.wait(0.1)
+	end
+end
+Players.PlayerAdded:Connect(function(player)
+	task.spawn(spawnInitialCrowd, player)
+end)
+for _, player in ipairs(Players:GetPlayers()) do
+	task.spawn(spawnInitialCrowd, player)
+end
 
 return VisitorService

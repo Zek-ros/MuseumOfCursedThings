@@ -22,10 +22,10 @@ local CompleteTutorialRF = RemoteFunctions:WaitForChild("CompleteTutorial")
 
 -- The four actionable steps. Step 5 is the completion message.
 local STEPS = {
-	"Head out! Press the  🔦 Go on Expedition  button (bottom-left).",
-	"Find a glowing artifact and hold its  Take  prompt to grab it.",
-	"Carry it to the glowing green  EXTRACTION  pad to bring it home.",
-	"Back home: open  🏛 Inventory  and press  Display  on your artifact.",
+	"Tap  🔦 Go on Expedition  (right side), pick a maze, and join the queue.",
+	"It's dark in there — use your flashlight, find a glowing artifact, and hold its  Take  prompt.",
+	"Carry it to the glowing green  EXTRACTION  pad to escape with it.",
+	"Back home: open  🏛 Inventory  and press  Display  to put it on a pedestal — that earns income!",
 }
 
 local currentStep = 1
@@ -111,13 +111,52 @@ local function flash()
 	}):Play()
 end
 
+-- Pulse a glowing outline on the actual HUD button the player needs to tap.
+-- Found by name in PlayerGui, so it points at the real button wherever it lives.
+local highlightStroke = nil
+local highlightTween = nil
+local function clearHighlight()
+	if highlightTween then
+		highlightTween:Cancel()
+		highlightTween = nil
+	end
+	if highlightStroke then
+		highlightStroke:Destroy()
+		highlightStroke = nil
+	end
+end
+local function highlightButton(buttonName: string)
+	clearHighlight()
+	local btn = playerGui:FindFirstChild(buttonName, true)
+	if not (btn and btn:IsA("GuiObject")) then
+		return
+	end
+	local stroke = Instance.new("UIStroke")
+	stroke.Color = Color3.fromRGB(255, 225, 110)
+	stroke.Thickness = 1
+	stroke.Parent = btn
+	highlightStroke = stroke
+	highlightTween = TweenService:Create(stroke,
+		TweenInfo.new(0.65, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), { Thickness = 4 })
+	highlightTween:Play()
+end
+
 local function setObjective(stepNum: number)
 	objectiveLabel.Text = STEPS[stepNum]
 	stepLabel.Text = string.format("Step %d of %d", stepNum, #STEPS)
+	-- Point at the button this step needs (world steps 2/3 are guided in-world).
+	if stepNum == 1 then
+		highlightButton("ExpeditionButton")
+	elseif stepNum == 4 then
+		highlightButton("InventoryButton")
+	else
+		clearHighlight()
+	end
 end
 
 local function finish()
 	active = false
+	clearHighlight()
 	local bonus = CompleteTutorialRF:InvokeServer() or 0
 	flash()
 	titleLabel.Text = "✓ ALL SET!"

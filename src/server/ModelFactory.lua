@@ -79,6 +79,20 @@ function ModelFactory.Resolve(assetId, fallbackFn: () -> Instance): Instance
 	return normalize(fallbackFn())
 end
 
+--- Prepare a hand-authored template (e.g. a model saved into the repo) for use
+--- as a floating/moving visual: clone it, strip any bundled scripts, anchor +
+--- disable collisions, and ensure a PrimaryPart. Mirrors what Resolve() does for
+--- loaded assets, so a saved model behaves identically to an asset-id one.
+function ModelFactory.PrepareFigure(template: Instance): Instance
+	local clone = template:Clone()
+	for _, d in ipairs(clone:GetDescendants()) do
+		if d:IsA("BaseScript") then
+			d:Destroy()
+		end
+	end
+	return normalize(clone)
+end
+
 --- Load a real model by asset id for use as a SOLID, grounded prop (pedestals,
 -- portals): anchors every part but KEEPS the authored collisions. Returns nil if
 -- the asset can't be loaded, so the caller can keep its own procedural fallback.

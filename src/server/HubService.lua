@@ -8,22 +8,34 @@
 
 local Players           = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService        = game:GetService("RunService")
 
-local ExpeditionService = require(script.Parent.ExpeditionService)
-local PedestalService   = require(script.Parent.PedestalService)
-local HubBuilder        = require(script.Parent.HubBuilder)
-local MuseumSignals     = require(script.Parent.MuseumSignals)
-local ExpeditionMaps    = require(ReplicatedStorage.Shared.ExpeditionMaps)
+local ExpeditionService  = require(script.Parent.ExpeditionService)
+local PedestalService    = require(script.Parent.PedestalService)
+local DataService        = require(script.Parent.DataService)
+local HubBuilder         = require(script.Parent.HubBuilder)
+local MuseumSignals      = require(script.Parent.MuseumSignals)
+local LeaderboardService = require(script.Parent.LeaderboardService)
+local ExpeditionMaps     = require(ReplicatedStorage.Shared.ExpeditionMaps)
 
 local RemoteFunctions = ReplicatedStorage:WaitForChild("RemoteFunctions")
 local RemoteEvents    = ReplicatedStorage:WaitForChild("RemoteEvents")
 local QueueStateEvent = RemoteEvents:WaitForChild("QueueState")
 local OpenQueueEvent  = RemoteEvents:WaitForChild("OpenQueue")
+local OpenShopEvent   = RemoteEvents:WaitForChild("OpenShop")
+local OpenDailyEvent  = RemoteEvents:WaitForChild("OpenDailyReward")
 
 local HubService = {}
 
 local HUB_ORIGIN = CFrame.new(0, 0, 600)
-local QUEUE_COUNTDOWN = 15
+local QUEUE_COUNTDOWN = 8
+
+-- A player who has never collected an artifact is brand new — get them into
+-- the action instantly instead of making them wait out a countdown.
+local function isFirstTimer(player: Player): boolean
+	local data = DataService.GetData(player)
+	return data ~= nil and data.Statistics ~= nil and (data.Statistics.ArtifactsCollected or 0) == 0
+end
 
 -- Valid map ids + display names
 local mapNames = {}
@@ -139,6 +151,10 @@ function HubService.JoinQueue(player: Player, mapId: string)
 	-- loop synchronously up to its first wait; if Members were still empty it
 	-- would immediately cancel the queue.
 	q.Members[player] = true
+	-- New player starting a fresh queue: launch immediately, no countdown wait.
+	if isNew and isFirstTimer(player) then
+		q.EndsAt = os.clock()
+	end
 	if isNew then
 		runCountdown(mapId)
 	end
@@ -173,9 +189,53 @@ local function setupPlayer(player: Player)
 	teleportToHub(player)
 end
 
+-- Group a number with commas (12345 -> "12,345") for the leaderboard boards.
+local function commas(n: number): string
+	local s = tostring(math.floor(n))
+	local out = s:reverse():gsub("(%d%d%d)", "%1,"):reverse()
+	return (out:gsub("^,", ""))
+end
+
+local function fillBoard(rows, list, fmt)
+	if not rows then return end
+	list = list or {}
+	for i, row in ipairs(rows) do
+		local entry = list[i]
+		if entry then
+			row.Text = string.format("%d.  %s    %s", i, entry.Name, fmt(entry.Value or 0))
+		else
+			row.Text = i .. ".  —"
+		end
+	end
+end
+
+local function updateLeaderboardBoard()
+	if not hub or not hub.Boards then return end
+	fillBoard(hub.Boards.Earned, LeaderboardService.GetTopEarned(), function(v) return "● " .. commas(v) end)
+	fillBoard(hub.Boards.Collection, LeaderboardService.GetTopCollection(), function(v) return commas(v) .. " found" end)
+	fillBoard(hub.Boards.Prestige, LeaderboardService.GetTopPrestige(), function(v) return "Prestige " .. v end)
+end
+
 local function init()
 	hub = HubBuilder.Build(HUB_ORIGIN)
 	hub.Model.Parent = workspace
+
+	-- Keep the Hall of Fame boards fresh from the leaderboard data.
+	task.spawn(function()
+		while true do
+			updateLeaderboardBoard()
+			task.wait(15)
+		end
+	end)
+
+	-- Slowly rotate the cursed centerpiece (shards orbit the orb).
+	if hub.Centerpiece then
+		RunService.Heartbeat:Connect(function(dt)
+			if hub and hub.Centerpiece and hub.Centerpiece.PrimaryPart then
+				hub.Centerpiece:PivotTo(hub.Centerpiece:GetPivot() * CFrame.Angles(0, dt * 0.6, 0))
+			end
+		end)
+	end
 
 	-- Hub pad prompts
 	local queuePrompt = Instance.new("ProximityPrompt")
@@ -198,6 +258,28 @@ local function init()
 	museumPrompt.Parent = hub.MuseumPad
 	museumPrompt.Triggered:Connect(function(player)
 		PedestalService.ReturnHome(player)
+	end)
+
+	local shopPrompt = Instance.new("ProximityPrompt")
+	shopPrompt.ActionText = "Open Shop"
+	shopPrompt.ObjectText = "Shop"
+	shopPrompt.HoldDuration = 0
+	shopPrompt.MaxActivationDistance = 12
+	shopPrompt.RequiresLineOfSight = false
+	shopPrompt.Parent = hub.ShopPad
+	shopPrompt.Triggered:Connect(function(player)
+		OpenShopEvent:FireClient(player)
+	end)
+
+	local dailyPrompt = Instance.new("ProximityPrompt")
+	dailyPrompt.ActionText = "Claim Daily Reward"
+	dailyPrompt.ObjectText = "Daily Reward"
+	dailyPrompt.HoldDuration = 0
+	dailyPrompt.MaxActivationDistance = 12
+	dailyPrompt.RequiresLineOfSight = false
+	dailyPrompt.Parent = hub.DailyPad
+	dailyPrompt.Triggered:Connect(function(player)
+		OpenDailyEvent:FireClient(player)
 	end)
 
 	Players.PlayerAdded:Connect(setupPlayer)

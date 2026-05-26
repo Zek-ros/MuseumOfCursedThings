@@ -5,7 +5,7 @@
 
 local Workspace = game:GetService("Workspace")
 
-print("[Museum of Cursed Things] Server booting...")
+print("[Museum of Cursed Things] Server booting... (build: HUB-OVERHAUL-30)")
 
 -- The default Studio "Baseplate" template part sits at height 0 and z-fights
 -- with our museum floors (also at height 0), making the floor flicker. We build
@@ -56,9 +56,10 @@ require(script.Parent.MonsterService)
 -- The shared hub: where players spawn, and the multiplayer expedition queue.
 require(script.Parent.HubService)
 
--- Retention: global leaderboards + daily login rewards.
+-- Retention: global leaderboards + daily login rewards + offline ("Welcome Back") earnings.
 require(script.Parent.LeaderboardService)
 require(script.Parent.DailyRewardService)
+require(script.Parent.OfflineEarningsService)
 
 -- Endgame: prestige / rebirth + achievements.
 require(script.Parent.PrestigeService)
@@ -73,5 +74,13 @@ require(script.Parent.TutorialService)
 -- Background loops (income ticks, chaos events). These depend on DataService.
 require(script.Parent.PassiveIncomeService)
 require(script.Parent.ChaosManager)
+
+-- Non-core services LAST: a stall or error in one of these must never take down
+-- the gameplay/monetization services above. ("Next goal" HUD + owner reset tools.)
+require(script.Parent.GoalService)
+require(script.Parent.AdminService)
+
+-- Buyable museum themes (coin sink + customization). Depends on PedestalService.
+require(script.Parent.ThemeService)
 
 print("[Museum of Cursed Things] Server initialized.")

@@ -36,6 +36,19 @@ local cachedCollection = {}
 local cachedPrestige = {}
 local nameCache = {} -- [userId] = name
 
+-- Players who must NEVER appear on the leaderboards. The game owner is always
+-- excluded (so the creator can't sit at the top of their own game); add extra
+-- UserIds here to force-exclude anyone else.
+local EXCLUDED_USER_IDS: { [number]: boolean } = {
+	-- [123456789] = true,
+}
+local function isExcludedId(userId: number): boolean
+	if game.CreatorType == Enum.CreatorType.User and userId == game.CreatorId then
+		return true
+	end
+	return EXCLUDED_USER_IDS[userId] == true
+end
+
 local function discoveredCount(data): number
 	local n = 0
 	for _ in pairs(data.Discovered or {}) do n += 1 end
@@ -57,10 +70,18 @@ end
 -- =============================================
 local function savePlayer(player: Player)
 	if not available then return end
+	local key = tostring(player.UserId)
+	-- Excluded players (e.g. the owner) are never written, and any existing entry
+	-- is purged on each save so they can't linger on the board.
+	if isExcludedId(player.UserId) then
+		pcall(function() earnedStore:RemoveAsync(key) end)
+		pcall(function() collectionStore:RemoveAsync(key) end)
+		pcall(function() prestigeStore:RemoveAsync(key) end)
+		return
+	end
 	local data = DataService.GetData(player)
 	if not data then return end
 	nameCache[player.UserId] = player.Name
-	local key = tostring(player.UserId)
 	pcall(function()
 		earnedStore:SetAsync(key, math.floor(data.Statistics.TotalEarned or 0))
 	end)
@@ -84,7 +105,7 @@ local function fetchTop(store): { { Name: string, Value: number } }
 	if not ok2 or not page then return result end
 	for _, entry in ipairs(page) do
 		local userId = tonumber(entry.key)
-		if userId then
+		if userId and not isExcludedId(userId) then
 			table.insert(result, { Name = getName(userId), Value = entry.value })
 		end
 	end
@@ -95,7 +116,7 @@ local function rankCurrentServer()
 	local earned, collection, prestige = {}, {}, {}
 	for _, player in ipairs(Players:GetPlayers()) do
 		local data = DataService.GetData(player)
-		if data then
+		if data and not isExcludedId(player.UserId) then
 			table.insert(earned, { Name = player.Name, Value = math.floor(data.Statistics.TotalEarned or 0) })
 			table.insert(collection, { Name = player.Name, Value = discoveredCount(data) })
 			table.insert(prestige, { Name = player.Name, Value = data.Prestige or 0 })
@@ -133,6 +154,26 @@ task.spawn(function()
 end)
 
 Players.PlayerRemoving:Connect(savePlayer)
+
+-- The current cached top lists ({ Name, Value }), for the hub Hall of Fame boards.
+function LeaderboardService.GetTopEarned()
+	return cachedEarned
+end
+function LeaderboardService.GetTopCollection()
+	return cachedCollection
+end
+function LeaderboardService.GetTopPrestige()
+	return cachedPrestige
+end
+
+-- Remove a player from all three global leaderboards (used by the owner reset).
+function LeaderboardService.RemovePlayer(player: Player)
+	if not available then return end
+	local key = tostring(player.UserId)
+	pcall(function() earnedStore:RemoveAsync(key) end)
+	pcall(function() collectionStore:RemoveAsync(key) end)
+	pcall(function() prestigeStore:RemoveAsync(key) end)
+end
 
 RemoteFunctions:WaitForChild("GetLeaderboards").OnServerInvoke = function()
 	return {

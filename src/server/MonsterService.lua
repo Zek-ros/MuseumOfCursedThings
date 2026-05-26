@@ -22,6 +22,30 @@ local MonsterService = {}
 
 local MONSTER_MODEL_ID = 8482062232
 
+-- A monster model saved into the repo (src/shared/MonsterModels) takes priority
+-- over the asset id. Cached after first lookup so we don't rescan every spawn.
+-- IMPORTANT: a bounded wait (NOT an infinite WaitForChild) so a missing/unsynced
+-- folder can never hang this module's require and halt the whole server boot.
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local monsterTemplate: Instance? = nil
+local templateResolved = false
+local function getMonsterTemplate(): Instance?
+	if templateResolved then
+		return monsterTemplate
+	end
+	templateResolved = true
+	local folder = Shared:FindFirstChild("MonsterModels")
+	if folder then
+		for _, child in ipairs(folder:GetChildren()) do
+			if child:IsA("Model") or child:IsA("BasePart") then
+				monsterTemplate = child
+				break
+			end
+		end
+	end
+	return monsterTemplate
+end
+
 local CATCH_RADIUS    = 3.5  -- must be right on top of you to steal (not just "near")
 local SPAWN_DISTANCE  = 34
 local PATROL_SPEED    = 6    -- wandering (a slow stalk)
@@ -65,6 +89,11 @@ local function rarityColor(rarity: string?): Color3
 end
 
 local function makeMonster(): Model
+	-- 1) a model saved into the repo, 2) the asset-id model, 3) procedural figure.
+	local template = getMonsterTemplate()
+	if template then
+		return ModelFactory.PrepareFigure(template)
+	end
 	return ModelFactory.Resolve(MONSTER_MODEL_ID, function()
 		return ModelFactory.BuildFigure({
 			Name = "Monster",
@@ -92,6 +121,23 @@ local function wallAhead(fromPos: Vector3, dir: Vector3, dist: number): boolean
 	return workspace:Raycast(fromPos, dir * (dist + STEP_BUFFER), monsterRayParams) ~= nil
 end
 
+-- Custom monster models often aren't authored facing -Z (the direction monsters
+-- look while moving), so they appear to walk sideways/backward. This yaw (about
+-- the Y axis) rotates the model to compensate. ONLY applied to a saved custom
+-- model — the asset-id / procedural fallbacks already face -Z correctly.
+-- If it still looks wrong: it faces the OTHER side -> use math.rad(-90); faces
+-- backward -> math.rad(180); was already fine -> math.rad(0).
+local MONSTER_YAW_OFFSET = math.rad(-90)
+
+-- Orient a monster to look along `dir`, applying the custom-model yaw fix.
+local function facingCFrame(pos: Vector3, dir: Vector3): CFrame
+	local cf = CFrame.lookAt(pos, pos + dir)
+	if getMonsterTemplate() then
+		cf = cf * CFrame.Angles(0, MONSTER_YAW_OFFSET, 0)
+	end
+	return cf
+end
+
 -- Move a monster horizontally toward `targetPos`, but NEVER through a wall.
 -- Returns (distanceToTarget, didMove) — didMove is false when blocked by a wall.
 local function chaseStep(monster: Model, targetPos: Vector3, speed: number, dt: number): (number, boolean)
@@ -105,11 +151,11 @@ local function chaseStep(monster: Model, targetPos: Vector3, speed: number, dt: 
 	local step = math.min(speed * dt, dist)
 	if wallAhead(cur, dir, step) then
 		-- Blocked: hold position (just turn to face the target) — no phasing.
-		ModelFactory.Place(monster, CFrame.lookAt(cur, cur + dir))
+		ModelFactory.Place(monster, facingCFrame(cur, dir))
 		return dist, false
 	end
 	local newPos = cur + dir * step
-	ModelFactory.Place(monster, CFrame.lookAt(newPos, newPos + dir))
+	ModelFactory.Place(monster, facingCFrame(newPos, dir))
 	return dist, true
 end
 
@@ -233,7 +279,11 @@ local function catchPlayer(player: Player, monster: Model?, region)
 		artifactId, rarity = MonsterService.OnSteal(player)
 	end
 	if not artifactId then
-		return -- empty-handed: no penalty, just the scare
+		-- empty-handed: no penalty, just the scare (growl + shake on the client)
+		if MonsterService.OnScare then
+			MonsterService.OnScare(player)
+		end
+		return
 	end
 
 	-- They had loot: end the converging hunt, let a thief flee with it.

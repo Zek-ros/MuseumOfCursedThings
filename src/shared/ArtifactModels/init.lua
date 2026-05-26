@@ -49,4 +49,18 @@ for _, child in ipairs(script:GetChildren()) do
 	end
 end
 
+-- Real 3D models OVERRIDE the code builders. Save an imported .glb as
+-- "<ArtifactId>.rbxmx" into src/shared/ArtifactMeshes and it's auto-used for
+-- that artifact's museum exhibit AND its maze pickup — no code needed.
+local meshFolder = script.Parent:FindFirstChild("ArtifactMeshes")
+if meshFolder then
+	for _, model in ipairs(meshFolder:GetChildren()) do
+		if model:IsA("Model") or model:IsA("BasePart") then
+			ArtifactModels[model.Name] = function()
+				return model:Clone()
+			end
+		end
+	end
+end
+
 return ArtifactModels

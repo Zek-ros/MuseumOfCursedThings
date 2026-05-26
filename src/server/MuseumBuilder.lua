@@ -15,7 +15,10 @@ local MuseumBuilder = {}
 -- Real Store models for the solid props (nil = keep the procedural version).
 local PEDESTAL_MODEL_ID = 5057773836
 local HUB_PORTAL_MODEL_ID = 18506880748
-local PEDESTAL_LIGHT_MODEL_ID = 10502699722 -- ceiling fixture that beams down on each pedestal
+-- Disabled: asset 10502699722 renders as a plain box and aimed sideways. Using a
+-- clean overhead spotlight instead. Set back to the id to re-enable the fixture mesh.
+local PEDESTAL_LIGHT_MODEL_ID = nil
+local fixtureDebugged = false -- one-time structure dump of the pedestal-light asset
 
 -- Room dimensions (studs) — sized to fit MAX_PEDESTALS in rows.
 local ROOM_X = 84
@@ -29,10 +32,12 @@ local PED_SPACING_X = 12
 local PED_ROW_SPACING = 12
 local PED_FIRST_ROW_Z = -(ROOM_Z / 2) + 10
 
-local FLOOR_COLOR   = Color3.fromRGB(48, 44, 58)
+local FLOOR_COLOR   = Color3.fromRGB(52, 48, 62)
 local WALL_COLOR    = Color3.fromRGB(36, 33, 46)
 local PEDESTAL_COLOR = Color3.fromRGB(90, 84, 104)
 local LIGHT_COLOR   = Color3.fromRGB(255, 236, 200) -- warm museum light
+local TRIM_COLOR    = Color3.fromRGB(150, 132, 96)  -- aged brass/stone architectural trim
+local CARPET_COLOR  = Color3.fromRGB(96, 26, 34)    -- deep crimson runner
 
 -- Create an anchored part positioned relative to the museum origin.
 local function makePart(origin: CFrame, parent: Instance, name: string, size: Vector3, localPos: Vector3, color: Color3, material: Enum.Material)
@@ -144,9 +149,21 @@ local function addPedestalLight(origin: CFrame, lp: Vector3, ped: BasePart)
 
 	local fixture = ModelFactory.TryLoad(PEDESTAL_LIGHT_MODEL_ID)
 	if fixture then
-		-- Drop the fixture's own (sideways-aimed) light; our beam below points down.
+		if not fixtureDebugged then
+			fixtureDebugged = true
+			local kinds = {}
+			for _, d in ipairs(fixture:GetDescendants()) do
+				kinds[d.ClassName] = (kinds[d.ClassName] or 0) + 1
+			end
+			local s = {}
+			for k, v in pairs(kinds) do
+				table.insert(s, k .. "x" .. v)
+			end
+			print("[PedestalLightDebug] root=" .. fixture.ClassName .. ":" .. fixture.Name .. " :: " .. table.concat(s, ", "))
+		end
+		-- Drop the fixture's own (sideways-aimed) emitters; our beam below points down.
 		for _, d in ipairs(fixture:GetDescendants()) do
-			if d:IsA("Light") then
+			if d:IsA("Light") or d:IsA("Beam") or d:IsA("ParticleEmitter") then
 				d:Destroy()
 			end
 		end
@@ -161,11 +178,80 @@ local function addPedestalLight(origin: CFrame, lp: Vector3, ped: BasePart)
 	src.CanCollide = false
 	local beam = Instance.new("SpotLight")
 	beam.Face = Enum.NormalId.Bottom
-	beam.Angle = 50
-	beam.Range = 22
-	beam.Brightness = 2.5
+	beam.Angle = 45
+	beam.Range = 26
+	beam.Brightness = 4
 	beam.Color = Color3.fromRGB(255, 244, 214)
 	beam.Parent = src
+end
+
+-- Architectural detail + identity: baseboard/cornice trim, a center carpet
+-- runner, and the owner's name on the back wall. Pure decoration (no gameplay).
+local function addAtmosphere(origin: CFrame, model: Instance, ownerName: string)
+	local halfX, halfZ = ROOM_X / 2, ROOM_Z / 2
+
+	-- Crimson runner down the center aisle.
+	makePart(origin, model, "Carpet",
+		Vector3.new(8, 0.08, ROOM_Z - 6),
+		Vector3.new(0, 0.05, 0),
+		CARPET_COLOR, Enum.Material.Fabric)
+
+	-- Baseboard (y≈1) + cornice (near ceiling) trim hugging the inner walls.
+	local inset = WALL_THICK / 2 + 0.5
+	for _, band in ipairs({ { y = 1, h = 1.4 }, { y = WALL_HEIGHT - 1, h = 1.0 } }) do
+		makePart(origin, model, "Trim", Vector3.new(ROOM_X, band.h, 0.6), Vector3.new(0, band.y, -halfZ + inset), TRIM_COLOR, Enum.Material.Marble)
+		makePart(origin, model, "Trim", Vector3.new(ROOM_X, band.h, 0.6), Vector3.new(0, band.y, halfZ - inset), TRIM_COLOR, Enum.Material.Marble)
+		makePart(origin, model, "Trim", Vector3.new(0.6, band.h, ROOM_Z), Vector3.new(-halfX + inset, band.y, 0), TRIM_COLOR, Enum.Material.Marble)
+		makePart(origin, model, "Trim", Vector3.new(0.6, band.h, ROOM_Z), Vector3.new(halfX - inset, band.y, 0), TRIM_COLOR, Enum.Material.Marble)
+	end
+
+	-- Name sign high on the back wall (the wall you face when you arrive). A thin
+	-- accent backing creates a framed look.
+	makePart(origin, model, "SignFrame",
+		Vector3.new(42, 11, 0.3),
+		Vector3.new(0, WALL_HEIGHT * 0.6, -halfZ + WALL_THICK / 2 + 0.25),
+		TRIM_COLOR, Enum.Material.Metal)
+	local sign = makePart(origin, model, "MuseumSign",
+		Vector3.new(40, 9, 0.4),
+		Vector3.new(0, WALL_HEIGHT * 0.6, -halfZ + WALL_THICK / 2 + 0.4),
+		Color3.fromRGB(22, 19, 28), Enum.Material.SmoothPlastic)
+	local gui = Instance.new("SurfaceGui")
+	gui.Face = Enum.NormalId.Back -- +Z, into the room
+	gui.LightInfluence = 0
+	gui.Parent = sign
+
+	local title = Instance.new("TextLabel")
+	title.Size = UDim2.fromScale(0.88, 0.46)
+	title.Position = UDim2.fromScale(0.06, 0.08)
+	title.BackgroundTransparency = 1
+	title.Font = Enum.Font.GothamBlack
+	title.Text = string.upper(ownerName) .. "'S"
+	title.TextColor3 = Color3.fromRGB(232, 212, 150)
+	title.TextScaled = true
+	title.TextXAlignment = Enum.TextXAlignment.Center
+	title.Parent = gui
+	local titleCap = Instance.new("UITextSizeConstraint")
+	titleCap.MaxTextSize = 150
+	titleCap.Parent = title
+	local titleStroke = Instance.new("UIStroke")
+	titleStroke.Color = Color3.fromRGB(0, 0, 0)
+	titleStroke.Thickness = 2
+	titleStroke.Transparency = 0.45
+	titleStroke.Parent = title
+
+	local sub = Instance.new("TextLabel")
+	sub.Size = UDim2.fromScale(0.88, 0.24)
+	sub.Position = UDim2.fromScale(0.06, 0.62)
+	sub.BackgroundTransparency = 1
+	sub.Font = Enum.Font.GothamBold
+	sub.Text = "MUSEUM OF CURSED THINGS"
+	sub.TextColor3 = Color3.fromRGB(168, 148, 110)
+	sub.TextScaled = true
+	sub.TextXAlignment = Enum.TextXAlignment.Center
+	sub.Parent = gui
+	local subCap = Instance.new("UITextSizeConstraint")
+	subCap.MaxTextSize = 60
+	subCap.Parent = sub
 end
 
 --- Create a single pedestal at slot `index`, parented to `parent`. Returns the
@@ -206,11 +292,11 @@ function MuseumBuilder.Build(origin: CFrame, ownerName: string)
 	local model = Instance.new("Model")
 	model.Name = "Museum_" .. ownerName
 
-	-- Floor (top surface sits at y = 0)
+	-- Floor (top surface sits at y = 0) — polished marble for a gallery feel
 	makePart(origin, model, "Floor",
 		Vector3.new(ROOM_X, WALL_THICK, ROOM_Z),
 		Vector3.new(0, -WALL_THICK / 2, 0),
-		FLOOR_COLOR, Enum.Material.Slate)
+		FLOOR_COLOR, Enum.Material.Marble)
 
 	-- Walls
 	local halfX, halfZ = ROOM_X / 2, ROOM_Z / 2
@@ -233,18 +319,24 @@ function MuseumBuilder.Build(origin: CFrame, ownerName: string)
 		Vector3.new(ROOM_X, WALL_THICK, ROOM_Z),
 		Vector3.new(0, WALL_HEIGHT + WALL_THICK / 2, 0), WALL_COLOR, Enum.Material.Concrete)
 
-	-- Ceiling lights: warm point lights spread across the (bigger) room
-	for _, lx in ipairs({ -28, 0, 28 }) do
-		local fixture = makePart(origin, model, "LightFixture",
-			Vector3.new(4, 0.5, 4),
-			Vector3.new(lx, WALL_HEIGHT - 1, 0),
-			Color3.fromRGB(20, 20, 20), Enum.Material.Metal)
-		local light = Instance.new("PointLight")
-		light.Color = LIGHT_COLOR
-		light.Brightness = 2
-		light.Range = 30
-		light.Parent = fixture
+	-- Ceiling lights: dimmer warm fill in two rows, so the room reads moody and
+	-- the per-pedestal spotlights do the dramatic work (gallery contrast).
+	for _, lz in ipairs({ -14, 14 }) do
+		for _, lx in ipairs({ -28, 0, 28 }) do
+			local fixture = makePart(origin, model, "LightFixture",
+				Vector3.new(4, 0.5, 4),
+				Vector3.new(lx, WALL_HEIGHT - 1, lz),
+				Color3.fromRGB(20, 20, 20), Enum.Material.Metal)
+			local light = Instance.new("PointLight")
+			light.Color = LIGHT_COLOR
+			light.Brightness = 1.3
+			light.Range = 28
+			light.Parent = fixture
+		end
 	end
+
+	-- Trim, carpet, and the museum's name on the back wall.
+	addAtmosphere(origin, model, ownerName)
 
 	-- Initial pedestals (level 1 count); more are added on level-up.
 	local pedestals = {}

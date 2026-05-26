@@ -12,6 +12,7 @@ local RunService        = game:GetService("RunService")
 
 local ArtifactService   = require(script.Parent.ArtifactService)
 local PedestalService   = require(script.Parent.PedestalService)
+local DataService       = require(script.Parent.DataService)
 local MonsterService    = require(script.Parent.MonsterService)
 local ExpeditionBuilder = require(script.Parent.ExpeditionBuilder)
 local ModelFactory      = require(script.Parent.ModelFactory)
@@ -244,17 +245,21 @@ local function removeCarry(player: Player)
 end
 
 -- =============================================
---  FLASHLIGHT (held in hand on expeditions)
+--  FLASHLIGHT (held model + forward arm pose on expeditions)
+--  Welded to the hand and posed forward via the uploaded hold animation (Action
+--  priority, so it overrides the run animation for the arm). The actual beam is
+--  the client head light (MuseumClient attachFlashlight on "Entered").
 -- =============================================
 local FLASHLIGHT_MODEL_ID = 516522664
-local flashlights = {} -- [player] = { Model, Joint, SavedC0 }
+local FLASHLIGHT_ANIM_ID = 106427348698324 -- "hold flashlight" forward arm pose
+local flashlights = {} -- [player] = { Model, Track }
 
 local function removeFlashlight(player: Player)
 	local entry = flashlights[player]
 	if not entry then return end
-	if entry.Joint and entry.SavedC0 then
+	if entry.Track then
 		pcall(function()
-			entry.Joint.C0 = entry.SavedC0
+			entry.Track:Stop()
 		end)
 	end
 	if entry.Model then
@@ -269,70 +274,80 @@ local function equipFlashlight(player: Player)
 	if not char then return end
 	local hand = char:FindFirstChild("RightHand") or char:FindFirstChild("Right Arm")
 	if not hand or not hand:IsA("BasePart") then return end
+	local humanoid = char:FindFirstChildOfClass("Humanoid")
 
-	local fl = ModelFactory.TryLoad(FLASHLIGHT_MODEL_ID)
-	if not fl then return end
-	local handle = (fl:IsA("Model") and (fl.PrimaryPart or fl:FindFirstChildWhichIsA("BasePart"))) or fl
-	if not handle or not handle:IsA("BasePart") then
-		fl:Destroy()
-		return
-	end
+	local asset = ModelFactory.TryLoad(FLASHLIGHT_MODEL_ID)
+	if not asset then return end
 
-	-- Sit it in the palm and weld every part so it rides with the hand.
-	if fl:IsA("Model") then
-		fl:PivotTo(hand.CFrame * CFrame.new(0, -0.6, -0.3))
-	else
-		fl.CFrame = hand.CFrame * CFrame.new(0, -0.6, -0.3)
-	end
+	-- Collect every BasePart (the asset is a Tool; we discard the Tool wrapper).
 	local parts = {}
-	if fl:IsA("BasePart") then
-		parts = { fl }
+	if asset:IsA("BasePart") then
+		table.insert(parts, asset)
 	else
-		for _, d in ipairs(fl:GetDescendants()) do
+		for _, d in ipairs(asset:GetDescendants()) do
 			if d:IsA("BasePart") then
 				table.insert(parts, d)
 			end
 		end
 	end
+	if #parts == 0 then
+		asset:Destroy()
+		return
+	end
+	local handle = parts[1]
+
+	-- Drop the Tool's own light + sound; the client head light is the beam.
+	for _, d in ipairs(asset:GetDescendants()) do
+		if d:IsA("Light") or d:IsA("Sound") then
+			d:Destroy()
+		end
+	end
+
+	-- Move the parts into a PLAIN holder (not a Tool) so it can't be unequipped.
+	local holder = Instance.new("Model")
+	holder.Name = "EquippedFlashlight"
 	for _, p in ipairs(parts) do
 		p.Anchored = false
 		p.CanCollide = false
 		p.Massless = true
+		p.Parent = holder
+	end
+	holder.PrimaryPart = handle
+	asset:Destroy() -- discard the Tool wrapper
+
+	-- Held in the hand.
+	holder:PivotTo(hand.CFrame * CFrame.new(0, -0.4, -0.5))
+	for _, p in ipairs(parts) do
 		local w = Instance.new("WeldConstraint")
 		w.Part0 = hand
 		w.Part1 = p
 		w.Parent = p
 	end
-	fl.Parent = char
+	holder.Parent = char
 
-	-- A beam from the flashlight itself (the client also lights the local player).
-	local beam = Instance.new("SpotLight")
-	beam.Face = Enum.NormalId.Front
-	beam.Angle = 60
-	beam.Range = 30
-	beam.Brightness = 2
-	beam.Color = Color3.fromRGB(255, 244, 214)
-	beam.Parent = handle
-
-	local entry = { Model = fl }
-
-	-- Pose the right arm forward (best-effort; depends on R15/R6 rig).
-	local upperArm = char:FindFirstChild("RightUpperArm")
-	local shoulder = upperArm and upperArm:FindFirstChild("RightShoulder")
-	if shoulder and shoulder:IsA("Motor6D") then
-		entry.Joint = shoulder
-		entry.SavedC0 = shoulder.C0
-		shoulder.C0 = shoulder.C0 * CFrame.Angles(math.rad(-75), 0, 0)
-	else
-		local torso = char:FindFirstChild("Torso")
-		local rs = torso and torso:FindFirstChild("Right Shoulder")
-		if rs and rs:IsA("Motor6D") then
-			entry.Joint = rs
-			entry.SavedC0 = rs.C0
-			rs.C0 = rs.C0 * CFrame.Angles(0, 0, math.rad(-75))
+	-- Pose the arm pointing forward via the uploaded hold animation (Action
+	-- priority overrides the run animation for the arm; legs keep animating).
+	-- NOTE: custom animations ONLY load in the PUBLISHED game, not a local Studio
+	-- test (placeid 0) — so this pose shows in the live game only.
+	local entry = { Model = holder }
+	local animator = humanoid and humanoid:FindFirstChildOfClass("Animator")
+	if animator then
+		local anim = Instance.new("Animation")
+		anim.AnimationId = "rbxassetid://" .. FLASHLIGHT_ANIM_ID
+		local ok, track = pcall(function()
+			return animator:LoadAnimation(anim)
+		end)
+		print(string.format("[FlashAnim] loadOk=%s track=%s", tostring(ok), tostring(track ~= nil)))
+		if ok and track then
+			track.Priority = Enum.AnimationPriority.Action
+			track.Looped = true
+			track:Play()
+			entry.Track = track
+			task.delay(0.5, function()
+				print(string.format("[FlashAnim] playing=%s length=%.2f", tostring(track.IsPlaying), track.Length))
+			end)
 		end
 	end
-
 	flashlights[player] = entry
 end
 
@@ -365,8 +380,8 @@ function ExpeditionService.Start(player: Player, mapId: string)
 
 	inExpedition[player] = mapId
 	teleportTo(player, map.Info.SpawnCFrame)
-	-- Fire the darkness/lighting IMMEDIATELY so it doesn't wait on the flashlight
-	-- asset download; equip the flashlight in the background.
+	-- Fire darkness/lighting immediately so it doesn't wait on the flashlight
+	-- asset download; equip the held flashlight in the background.
 	fireState(player, "Entered", nil, { Fog = map.Fog, FogColor = map.FogColor, Ambient = map.Ambient })
 	task.spawn(equipFlashlight, player)
 	return true, "Expedition started"
@@ -410,10 +425,22 @@ end
 --  drives the chase; ExpeditionService owns the carry, so it does the handoff).
 -- =============================================
 
+-- A monster reached an EMPTY-HANDED player: no penalty, just a scare cue.
+MonsterService.OnScare = function(player: Player)
+	if not inExpedition[player] then return end
+	fireState(player, "Scared")
+end
+
 -- A monster caught a carrier: take the artifact off them and hand it to the thief.
 MonsterService.OnSteal = function(player: Player): (string?, string?)
 	local carry = carrying[player]
 	if not carry then return nil, nil end
+	-- New players keep their FIRST artifact: no theft until they've collected one,
+	-- so they always reach that first "I earned money!" extraction.
+	local pdata = DataService.GetData(player)
+	if pdata and pdata.Statistics and (pdata.Statistics.ArtifactsCollected or 0) == 0 then
+		return nil, nil
+	end
 	carrying[player] = nil
 	removeCarry(player)
 	local def = ArtifactData.Artifacts[carry.ArtifactId]
